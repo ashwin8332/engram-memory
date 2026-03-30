@@ -1,0 +1,119 @@
+<div align="center">
+
+# Contributing to Engram
+
+*Thank you for being here. Engram is being built in the open, and early contributors shape what it becomes.*
+
+</div>
+
+---
+
+## Before You Start
+
+Read the [README](./README.md). Understand the problem Engram is solving. The best contributions come from people who've felt the pain — agents re-discovering things that were already known, knowledge evaporating at session end.
+
+If something is unclear or the design raises questions, **open a discussion before writing code.** Early-stage projects benefit more from alignment than from PRs that go in a different direction.
+
+<br />
+
+## Ways to Contribute
+
+### Open a Discussion
+The design is still being shaped. If you have thoughts on the API surface, the storage model, the conflict detection approach, or anything else — open a GitHub Discussion and share them. That is a real contribution.
+
+### File an Issue
+Found a bug, a gap in the design, or something that doesn't make sense? Open an issue. Be specific. Include what you expected, what happened, and what context matters.
+
+### Submit a Pull Request
+Code contributions are welcome. See the workflow below.
+
+<br />
+
+## Development Workflow
+
+**1. Fork and clone**
+```bash
+git clone https://github.com/your-username/Engram.git
+cd Engram
+```
+
+**2. Create a branch**
+```bash
+git checkout -b your-feature-or-fix
+```
+
+Use a descriptive branch name. `fix/conflict-detection-threshold` is better than `fix`.
+
+**3. Make your changes**
+
+Keep changes focused. One concern per PR. If you find yourself touching unrelated things, split them out.
+
+**4. Test your work**
+
+Don't submit a PR you haven't run yourself. If tests don't exist yet for what you're changing, add them or note it clearly in the PR description.
+
+**5. Open a PR**
+
+Write a clear description:
+- What does this change?
+- Why is it the right change?
+- Is there anything the reviewer should pay particular attention to?
+
+<br />
+
+## What Good PRs Look Like
+
+- **Focused.** One change, one reason.
+- **Explained.** The description covers the why, not just the what.
+- **Clean.** No dead code, no commented-out experiments, no unrelated formatting changes.
+- **Tested.** Ideally with new tests. At minimum, not breaking existing ones.
+
+<br />
+
+## What to Avoid
+
+- PRs without context or explanation
+- Large refactors without prior discussion
+- Changes to core API surface without an issue or discussion first
+- Dependency additions without a clear reason
+
+If you're unsure whether something is in scope, ask first. The cost of a quick discussion is much lower than a PR that can't be merged.
+
+<br />
+
+## Code Style
+
+Consistency matters more than any particular style. Match what's already there. If you're introducing something new, be deliberate about it and note it in the PR.
+
+<br />
+
+## Roadmap Items
+
+The [README roadmap](./README.md#roadmap) lists what's being built. These are good starting points if you want to contribute but aren't sure where. Comment on an issue or open a discussion before picking one up — some items have design decisions that need to happen first.
+
+<br />
+
+## Ground Rules
+
+- Be direct and specific in issues and reviews. Be respectful.
+- Disagreement on approach is fine. Resolve it through discussion, not pressure.
+- If you commit to something, follow through. If you can't, say so early.
+
+<br />
+
+## Questions
+
+Not sure where to start? Open a discussion. Describe what you're thinking, what interests you, or what problem you've run into. That's enough to start a conversation.
+
+You can also reach out directly at **joshnathbrown884@gmail.com**.
+
+<br />
+
+---
+
+<div align="center">
+
+*Every great project was once just a problem someone cared about enough to fix.*
+*Glad you're here.*
+
+</div>

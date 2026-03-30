@@ -1,66 +1,173 @@
-# Engram
+<div align="center">
+
+<br />
+
+```
+███████╗███╗   ██╗ ██████╗ ██████╗  █████╗ ███╗   ███╗
+██╔════╝████╗  ██║██╔════╝ ██╔══██╗██╔══██╗████╗ ████║
+█████╗  ██╔██╗ ██║██║  ███╗██████╔╝███████║██╔████╔██║
+██╔══╝  ██║╚██╗██║██║   ██║██╔══██╗██╔══██║██║╚██╔╝██║
+███████╗██║ ╚████║╚██████╔╝██║  ██║██║  ██║██║ ╚═╝ ██║
+╚══════╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝
+```
 
 **Persistent, shared agent memory as MCP infrastructure.**
 
-Every agent session starts from zero. It has no memory of why a decision was made last week, which approaches already failed, or what constraints are non-negotiable. Another engineer's agent re-discovered the same things the day before. That knowledge evaporated when the session ended.
+[![Status](https://img.shields.io/badge/status-early%20development-orange?style=flat-square)](https://github.com/Agentscreator/Engram)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](./LICENSE)
+[![MCP Compatible](https://img.shields.io/badge/MCP-compatible-8b5cf6?style=flat-square)](https://modelcontextprotocol.io)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](./CONTRIBUTING.md)
 
-Engram fixes that.
+<br />
+
+</div>
 
 ---
 
-## What it does
+Every agent session starts from zero.
 
-Engram is an MCP server that gives your agents a shared, versioned knowledge base that persists across sessions. When an agent discovers something real during work — a hidden side effect, a failed approach, an undocumented constraint — it commits that to Engram. The next engineer's agent, in a separate session days later, pulls that fact before touching the relevant code.
+No memory of why a decision was made last week. No record of which approaches already failed. No awareness of the constraints that are non-negotiable. Another engineer's agent re-discovered the same thing the day before. That knowledge evaporated when the session ended.
 
-It does not re-discover. It builds on.
+**Engram fixes that.**
 
-## How it works
+<br />
+
+## The Problem
+
+```
+Day 1 — Agent A discovers: "Don't touch the auth middleware.
+         Session token format changed. Old code breaks mobile."
+
+Day 3 — Agent B touches the auth middleware.
+         Re-discovers it the hard way.
+
+Day 7 — Agent C touches the auth middleware.
+```
+
+This is not a hypothetical. This is the default state of every multi-agent, multi-session codebase today. Knowledge is generated constantly — and lost constantly.
+
+<br />
+
+## What Engram Does
+
+Engram is an **MCP server** that gives your agents a shared, versioned knowledge base that persists across sessions. When an agent discovers something real — a hidden side effect, a failed approach, an undocumented constraint — it commits that to Engram.
+
+The next agent, in a separate session days later, pulls that fact before touching the relevant code.
+
+> It does not re-discover. It builds on.
+
+<br />
+
+## API Surface
 
 Engram exposes three tools any MCP-compatible agent can call:
 
+<br />
+
+### `query(topic)`
+
+```typescript
+// Before beginning work, pull what is already known.
+const facts = await engram.query("auth middleware");
+
+// Returns: relevant facts, past decisions, known constraints,
+// confidence levels, and the context behind each discovery.
 ```
-query(topic)
+
+> Called at the start of any session touching a known area. Surfaces accumulated team intelligence before a single line is written.
+
+<br />
+
+### `commit(fact, context)`
+
+```typescript
+// When you discover something worth preserving, write it.
+await engram.commit({
+  fact: "Auth middleware caches tokens in memory. Restart clears all sessions.",
+  context: "Discovered during load testing — 2k concurrent users caused cascade logout.",
+  scope: "src/middleware/auth.ts",
+  confidence: 0.95
+});
 ```
-Before beginning work, the agent pulls relevant facts, past decisions, and known constraints about what it is about to touch.
 
+> Entries are **append-only and never deleted.** The record of what was known, and when, is permanent.
+
+<br />
+
+### `conflicts()`
+
+```typescript
+// Surface contradictions before they become bugs.
+const contradictions = await engram.conflicts();
+
+// Returns: pairs of semantically contradictory facts,
+// flagged automatically via embedding similarity scoring.
 ```
-commit(fact, context)
-```
-When an agent discovers something worth preserving, it writes a structured entry — the fact, what triggered the discovery, the relevant scope, a confidence level, and a timestamp. Entries are append-only and never deleted.
 
-```
-conflicts()
-```
-Returns pairs of facts that semantically contradict each other, flagged automatically when a new commit's embedding similarity score crosses a contradiction threshold. A structured artifact you can review and resolve — not an error that blocks you.
+> Not an error that blocks you. A structured artifact you review and resolve — a signal that something in the codebase changed and the knowledge base needs reconciling.
 
-## Works with your existing tools
+<br />
 
-Engram is MCP-native. If your agent supports MCP — Claude Code, Cursor, Windsurf, or anything compatible — you connect to the server and it works. No changes to how you work. Just every session starting with accumulated team intelligence instead of nothing.
+## Works With Your Existing Stack
 
-## Current status
+Engram is MCP-native. No changes to how you work.
 
-Engram is in early development. The core design is solid — the architecture, API surface, and storage model are defined. Implementation is underway.
+| Agent / IDE | Status |
+|---|---|
+| Claude Code | Compatible |
+| Cursor | Compatible |
+| Windsurf | Compatible |
+| Any MCP client | Compatible |
 
-If you're interested in what's being built and want to follow along, star the repo. If you want to help shape it, open an issue or start a discussion. Early feedback on the design is especially welcome.
+Connect to the server. Every session starts with accumulated team intelligence instead of nothing.
+
+<br />
 
 ## Roadmap
 
-- [ ] MCP server with `query`, `commit`, and `conflicts` tools
-- [ ] SQLite backend with append-only fact store
-- [ ] Semantic search over committed facts
-- [ ] Embedding-based conflict detection
-- [ ] Two-engineer reproducible demo
+```
+ ○  MCP server — query, commit, and conflicts tools
+ ○  SQLite backend — append-only fact store
+ ○  Semantic search over committed facts
+ ○  Embedding-based conflict detection
+ ○  Two-engineer reproducible demo
+```
+
+<br />
+
+## Current Status
+
+Engram is in early development. The core design is solid — the architecture, API surface, and storage model are defined. Implementation is underway.
+
+If you're interested in what's being built, **star the repo** to follow along. If you want to help shape it, open an issue or start a discussion. Early feedback on the design changes real decisions.
+
+<br />
 
 ## Contributing
 
-Engram is being built in the open. If the problem resonates with you — if you've felt the pain of agents re-discovering things that were already known — contributions are welcome.
+Engram is being built in the open.
 
-Check [`CONTRIBUTING.md`](./CONTRIBUTING.md) for how to get involved. If you're not sure where to start, open a discussion and say what you're thinking. That counts.
+If the problem resonates with you — if you've felt the pain of agents re-discovering things that were already known — contributions are welcome. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for how to get involved.
+
+Not sure where to start? Open a discussion and say what you're thinking. That counts.
+
+<br />
 
 ## Feedback
 
-If you have thoughts on the design, the API surface, or the problem itself — open an issue or reach out directly at joshnathbrown884@gmail.com. This is early enough that real feedback changes real decisions.
+Thoughts on the design, the API surface, or the problem itself?
+
+Open an issue or reach out directly at **joshnathbrown884@gmail.com**. This is early enough that real feedback changes real decisions.
+
+<br />
 
 ---
 
-*A biological engram is the physical trace a memory leaves in the brain. That's the idea.*
+<div align="center">
+
+*A biological engram is the physical trace a memory leaves in the brain.*
+*That's the idea.*
+
+<br />
+
+</div>
