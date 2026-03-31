@@ -145,3 +145,252 @@ The most comprehensive survey of agent memory as of early 2026. Proposes a unifi
 | **Engram** | **Multi-agent shared memory** | **Cross-agent fact consistency** | **Yes (`engram_conflicts`)** | **2026** |
 
 The gap Engram fills is visible in every row of the right two columns: every existing system either does not address cross-agent consistency or names it as unsolved. Engram is the first working implementation of the detection layer.
+
+
+---
+
+# Adversarial Literature: Failure Modes and Falsification Risks
+
+The following papers and sources were identified through targeted search for research that could falsify or expose critical weaknesses in Engram's implementation plan. They are organized by the specific assumption they threaten.
+
+---
+
+## [5] Foundations of Global Consistency Checking with Noisy LLM Oracles
+
+**Authors:** Paul He et al.
+**ArXiv:** [2601.13600](https://arxiv.org/abs/2601.13600) (Jan 2026)
+
+### Summary
+
+This paper formalizes the problem Engram's conflict detection attempts to solve — and proves it is exponentially hard in the worst case. The authors show that verifying global consistency across a collection of natural-language facts requires exponentially many oracle queries when the oracle (LLM) is noisy. Pairwise checks are provably insufficient to guarantee global coherence. They propose an adaptive divide-and-conquer algorithm that identifies minimal inconsistent subsets (MUSes) with polynomial query complexity.
+
+### Threat to Engram
+
+Engram's Phase 3 conflict detection relies on pairwise LLM contradiction checks between a new fact and its embedding-similar neighbors. This paper proves that pairwise checking cannot guarantee global consistency. Three facts A, B, C may each be pairwise consistent while being jointly inconsistent (e.g., A: "service X uses PostgreSQL", B: "service X uses the same DB as service Y", C: "service Y uses MySQL"). Engram would miss this entirely. The paper's MUS-finding algorithm should inform a future revision of the detection pipeline.
+
+---
+
+## [6] Negation is Not Semantic: Diagnosing Dense Retrieval Failure Modes for Contradiction-Aware Biomedical QA
+
+**Authors:** Divya Bharti et al.
+**ArXiv:** [2603.17580](https://arxiv.org/abs/2603.17580) (Mar 2026)
+
+### Summary
+
+Demonstrates a "Simplicity Paradox" and "Semantic Collapse" in dense retrieval for contradiction detection. Complex adversarial dense retrieval strategies failed catastrophically at contradiction detection (MRR 0.023) because negation signals become indistinguishable in vector space. The authors also identify a "Retrieval Asymmetry": filtering dense embeddings improves contradiction detection but degrades support recall. Their solution is a Decoupled Lexical Architecture using BM25 as a backbone.
+
+### Threat to Engram
+
+Engram's candidate retrieval (Phase 3, Step 1) uses cosine similarity on embeddings to find facts that might contradict a new commit. But this paper shows that contradictory facts — which often differ only by negation or a single changed predicate — produce nearly identical embeddings. "The auth service uses JWT tokens" and "The auth service does not use JWT tokens" will have very high cosine similarity, which is correct for retrieval but means the 0.65 similarity threshold is meaningless as a filter for contradiction candidates. Worse, truly contradictory facts about different aspects of the same system may have *lower* similarity than non-contradictory facts about the same topic, causing them to be missed entirely. The implementation should add BM25/lexical retrieval as a parallel candidate retrieval path.
+
+---
+
+## [7] Attention Is Not Retention: The Orthogonality Constraint in Infinite-Context Architectures
+
+**Authors:** Simran Chana et al.
+**ArXiv:** [2601.15313](https://arxiv.org/abs/2601.15313) (Jan 2026)
+
+### Summary
+
+Identifies a fundamental geometric limit called the "Orthogonality Constraint": reliable memory retrieval requires orthogonal keys, but semantic embeddings cannot be orthogonal because training clusters similar concepts together. The result is "Semantic Interference" — neural systems writing facts into shared continuous parameters collapse to near-random accuracy within tens of semantically related facts. At high semantic density (ρ > 0.6), collapse occurs at just N=5 facts. The authors propose "Knowledge Objects" (KOs): structured facts with hash-based identity, controlled vocabularies, and explicit version chains. Hash-based retrieval maintains 100% accuracy where embedding-based retrieval collapses to near-zero.
+
+### Threat to Engram
+
+Engram stores codebase facts that are inherently high semantic density — many facts about the same services, APIs, and architectural decisions. The Orthogonality Constraint predicts that as facts accumulate within a scope, embedding-based retrieval will degrade. A scope like "auth" with 50+ facts about authentication will have high pairwise cosine similarity (ρ likely > 0.6), making it increasingly difficult to retrieve the *right* fact vs. any fact in that scope. The Knowledge Objects proposal — hash-based identity with controlled vocabularies — aligns with adding structured metadata (entity extraction, relation triples) to complement pure embedding retrieval.
+
+---
+
+## [8] When Agents "Misremember" Collectively: Exploring the Mandela Effect in LLM-based Multi-Agent Systems
+
+**Authors:** Naen Xu et al.
+**ArXiv:** [2602.00428](https://arxiv.org/abs/2602.00428) (Jan 2026)
+
+### Summary
+
+Demonstrates that LLM-based multi-agent systems are susceptible to collective false memory — the "Mandela Effect" — where agents reinforce each other's incorrect beliefs through social influence and internalized misinformation. The authors propose MANBENCH, a benchmark for evaluating this across four task types and five interaction protocols. Mitigation strategies (cognitive anchoring, source scrutiny, alignment-based defense) achieve 74.40% reduction in the effect.
+
+### Threat to Engram
+
+Engram's shared memory could become a vector for the Mandela Effect at scale. If Agent A commits an incorrect fact with high confidence, Agent B queries it, incorporates it into its reasoning, and then commits a *derived* fact that reinforces the original error, the knowledge base develops a self-reinforcing false belief. Engram's conflict detection only catches *contradictions* — it cannot detect *corroborating errors* where multiple agents agree on something false. The confidence field and agent provenance help, but there is no mechanism to flag when a cluster of facts all trace back to a single unverified source. A "citation depth" or "independent corroboration" metric should be considered.
+
+---
+
+## [9] Why Do Multi-Agent LLM Systems Fail?
+
+**Authors:** Mert Cemri, Melissa Z. Pan, Shuyi Yang, et al. (UC Berkeley, Stanford)
+**ArXiv:** [2503.13657](https://arxiv.org/abs/2503.13657) (Mar 2025)
+
+### Summary
+
+Introduces MAST, the first Multi-Agent System Failure Taxonomy, based on analysis of 1600+ annotated traces across 7 popular MAS frameworks. Identifies 14 unique failure modes in 3 categories: (i) system design issues, (ii) inter-agent misalignment, and (iii) task verification. Inter-agent misalignment accounts for 36.9% of failures, including agents ignoring, duplicating, or contradicting each other's work.
+
+### Threat to Engram
+
+Engram addresses contradiction (one failure mode) but the taxonomy reveals that inter-agent misalignment is broader: agents may *duplicate* work (committing semantically identical facts with different wording, bloating the knowledge base), *ignore* shared knowledge (querying but not incorporating results), or *misinterpret* facts from other agents (reading a fact correctly but applying it in the wrong context). Engram's current design has no deduplication mechanism — two agents committing "the payments service uses Stripe" and "Stripe is the payment processor for the payments module" would create two separate facts with no link between them, despite being the same knowledge. Near-duplicate detection should be added alongside contradiction detection.
+
+---
+
+## [10] Knowledge Conflicts for LLMs: A Survey
+
+**Authors:** Rongwu Xu et al.
+**ArXiv:** [2403.08319](https://arxiv.org/abs/2403.08319) (Mar 2024)
+
+### Summary
+
+Comprehensive survey of knowledge conflicts in LLMs, categorizing three types: context-memory conflict (retrieved context vs. parametric knowledge), inter-context conflict (contradictions between retrieved documents), and intra-memory conflict (inconsistencies within the model's own parameters). The survey documents that LLMs exhibit unpredictable behavior when faced with conflicting information — sometimes favoring context, sometimes parametric knowledge, with no reliable pattern.
+
+### Threat to Engram
+
+When `engram_query` returns facts that conflict with an agent's parametric knowledge, the agent's behavior is unpredictable. An agent might ignore a high-confidence Engram fact in favor of its training data, or vice versa. This means Engram's carefully curated knowledge base may be overridden silently by the consuming agent's own biases. The implementation cannot control what agents *do* with retrieved facts, but it can surface confidence signals and provenance more aggressively to help agents make informed decisions about which knowledge source to trust.
+
+---
+
+## [11] Common Sense vs. Morality: The Curious Case of Narrative Focus Bias in LLMs
+
+**Authors:** Sukannya Purkayastha et al.
+**ArXiv:** [2603.09434](https://arxiv.org/abs/2603.09434) (Mar 2026)
+
+### Summary
+
+Reveals that LLMs exhibit "narrative focus bias" — they more readily detect contradictions attributed to secondary characters/entities than to the primary narrator/subject. Across ten LLMs of different sizes, models consistently struggle to identify contradictions without prior signal.
+
+### Threat to Engram
+
+Engram's conflict detection prompt (Phase 3, Step 2) presents two facts and asks the LLM whether they contradict. The narrative focus bias suggests the LLM may be systematically worse at detecting contradictions in facts about the *primary* system under discussion (e.g., the main service being developed) vs. peripheral systems. Since most Engram facts will be about the primary codebase, this bias directly degrades detection accuracy on the most important facts. The prompt should be designed to mitigate this — potentially by reframing facts in a neutral, third-person structure.
+
+---
+
+## [12] Beyond Consensus: Mitigating the Agreeableness Bias in LLM Judge Evaluations
+
+**Authors:** Umair Z. Ahmed et al.
+**ArXiv:** [2510.11822](https://arxiv.org/abs/2510.11822) (Oct 2025)
+
+### Summary
+
+Demonstrates that LLMs used as judges exhibit strong positive bias: True Positive Rate > 96% but True Negative Rate < 25%. They are good at confirming valid outputs but remarkably poor at identifying invalid ones. Ensemble methods help but are insufficient; the authors propose minority-veto and regression-based debiasing.
+
+### Threat to Engram
+
+Engram uses an LLM (claude-haiku) as a judge to determine whether two facts contradict. The agreeableness bias predicts that the LLM will be biased toward saying facts are *not* contradictory (the "agreeable" answer). With a True Negative Rate potentially below 25%, Engram could miss 75%+ of actual contradictions. This is the single most dangerous failure mode for the core differentiator. Mitigation: use a minority-veto ensemble (run the contradiction check N times, flag as contradictory if *any* run says yes), or fine-tune the prompt to counteract the bias by asking "in what ways could these facts be contradictory?" before asking for a yes/no judgment.
+
+---
+
+## [13] The Messy Reality of Contradiction Detection in NLP
+
+**Source:** [httphangar.com/blog/nlp-contradiction-deep-dive](https://httphangar.com/blog/nlp-contradiction-deep-dive) (2025)
+
+### Summary
+
+Practical analysis of contradiction detection accuracy across LLMs. Key findings: self-contradictions within a single document are detected at 0.6%–45.6% accuracy. Pairwise contradictions between documents reach ~89% with chain-of-thought prompting. Numeric contradictions (unit mismatches, order-of-magnitude errors) are systematically missed by embedding models. Temporal contradictions require anchor resolution that LLMs cannot perform without explicit date context. Negation scope is the messiest category — "not ruled out" vs. "confirmed" requires deep pragmatic understanding.
+
+### Threat to Engram
+
+Codebase facts are rich in numeric values (port numbers, timeout values, version numbers, rate limits) and temporal references ("deprecated since v3", "migrated last sprint"). These are exactly the contradiction types that LLMs handle worst. "The rate limit is 100 req/s" vs. "The rate limit is 1000 req/s" — an order-of-magnitude contradiction — will likely be missed because the embedding similarity is high and the LLM judge may not flag a numeric difference as a contradiction. The implementation should add specialized numeric and temporal extraction as a pre-processing step before the LLM contradiction check.
+
+---
+
+## [14] Semantics at an Angle: When Cosine Similarity Works Until It Doesn't
+
+**Authors:** Kisung You et al.
+**ArXiv:** [2504.16318](https://arxiv.org/abs/2504.16318) (Apr 2025)
+
+### Summary
+
+Examines the limitations of cosine similarity for embedding comparison. Key finding: when embedding norms carry meaningful semantic information (e.g., specificity, confidence, or frequency), cosine similarity discards this signal by normalizing vectors. Additionally, anisotropy in pretrained embedding spaces causes scores to concentrate in a narrow high-similarity band regardless of actual semantic relatedness, limiting interpretability as a quantitative measure.
+
+### Threat to Engram
+
+Engram uses cosine similarity with a fixed threshold (0.65) to filter contradiction candidates and a weighted score (α=0.7) for query ranking. If the embedding space is anisotropic (which `all-MiniLM-L6-v2` is known to be), most fact pairs will cluster in a narrow similarity band (e.g., 0.6–0.8), making the 0.65 threshold nearly meaningless — it will either admit almost everything or almost nothing depending on the domain. The scoring function should use calibrated similarity or relative ranking rather than absolute thresholds.
+
+---
+
+## [15] Collaborative Memory: Multi-User Memory Sharing in LLM Agents with Dynamic Access Control
+
+**Authors:** Yuying Zhao et al.
+**ArXiv:** [2505.18279](https://arxiv.org/abs/2505.18279) (May 2025)
+
+### Summary
+
+Introduces a framework for multi-user, multi-agent environments with asymmetric, time-evolving access controls encoded as bipartite graphs. Maintains two memory tiers: private fragments (visible only to originating user) and shared fragments (selectively shared). Each fragment carries immutable provenance attributes. Granular read/write policies enforce user-agent-resource constraints with context-aware transformations.
+
+### Threat to Engram
+
+This paper implements a more sophisticated version of Engram's Phase 5 (access control). Engram's scope-based permissions (Phase 5) are static and coarse — an agent either can or cannot read/write a scope. Collaborative Memory's bipartite graph model supports time-evolving, asymmetric policies where access depends on the relationship between the requesting agent, the originating user, and the resource. Engram's simple `scope_permissions` table may be insufficient for real team deployments where, e.g., a junior engineer's agent should be able to read but not write to architecture-level scopes, or where access should change based on project phase. The access control model should be designed with extensibility toward graph-based policies.
+
+---
+
+## [16] SEDM: Scalable Self-Evolving Distributed Memory for Agents
+
+**Authors:** Haoran Xu et al.
+**ArXiv:** [2509.09498](https://arxiv.org/abs/2509.09498) (Sep 2025)
+
+### Summary
+
+Addresses the unbounded growth problem in multi-agent memory. SEDM integrates verifiable write admission (based on reproducible replay), a self-scheduling memory controller that dynamically ranks and consolidates entries according to empirical utility, and cross-domain knowledge diffusion. Key insight: memory must be an active, self-optimizing component, not a passive repository.
+
+### Threat to Engram
+
+Engram's append-only design means the facts table grows without bound. There is no consolidation, no forgetting, no utility-based ranking. Over months of team use, the knowledge base will accumulate thousands of facts, many outdated or low-value. Query performance degrades (more candidates to score), conflict detection becomes slower (more pairwise comparisons), and the signal-to-noise ratio drops. SEDM's "verifiable write admission" — requiring that a fact's value be demonstrable before it is stored — is a direct challenge to Engram's "commit everything, sort it out later" philosophy. The implementation should plan for a consolidation phase that periodically merges, summarizes, or archives low-utility facts.
+
+---
+
+## [17] Learning to Share: Selective Memory for Efficient Parallel Agentic Systems
+
+**Authors:** Joseph Fioresi et al.
+**ArXiv:** [2602.05965](https://arxiv.org/abs/2602.05965) (Feb 2026)
+
+### Summary
+
+Proposes a learned shared-memory mechanism for parallel agent frameworks. A lightweight controller trained via stepwise RL decides whether intermediate agent steps should be added to a global memory bank. The controller learns to identify information that is globally useful across parallel executions, significantly reducing runtime while matching or improving task performance.
+
+### Threat to Engram
+
+Engram treats all committed facts equally — any agent can commit anything. LTS demonstrates that *learned admission control* (deciding what is worth sharing) dramatically improves efficiency. Without admission control, Engram will accumulate low-value facts that dilute retrieval quality. The confidence field is agent-reported and unreliable (agents tend to report high confidence). A learned or heuristic admission gate — even a simple one based on novelty relative to existing facts — would improve the signal-to-noise ratio.
+
+---
+
+## [18] MMA: Multimodal Memory Agent
+
+**Authors:** Zeyu Zhang et al.
+**ArXiv:** [2602.16493](https://arxiv.org/abs/2602.16493) (Feb 2026)
+
+### Summary
+
+Proposes dynamic reliability scoring for retrieved memory items by combining source credibility, temporal decay, and conflict-aware network consensus. Introduces the concept of abstaining when support is insufficient. Uncovers the "Visual Placebo Effect" where RAG-based agents inherit latent biases from foundation models.
+
+### Threat to Engram
+
+Engram's query scoring (Phase 2) uses a simple `α * cosine_similarity + (1-α) * recency_decay` formula. MMA demonstrates that source credibility and conflict-aware consensus are critical additional signals. A fact from an agent that has historically committed many later-contradicted facts should be scored lower. Engram has the data to compute this (agent_id + conflict history) but doesn't use it in the scoring function. The query ranking should incorporate agent reliability as a signal.
+
+---
+
+## Existing Competitive Implementations
+
+Several existing projects occupy adjacent space and should be monitored:
+
+- **[mem0](https://github.com/mem0ai/mem0)** — Universal memory layer for AI agents. 40k+ GitHub stars. Handles single-user memory well but has no cross-agent conflict detection. The most likely project to add this feature and compete directly.
+- **[SAMEP](https://arxiv.org/abs/2507.10562)** — Secure Agent Memory Exchange Protocol. Implements persistent, secure, semantically searchable memory sharing with AES-256-GCM encryption and MCP/A2A compatibility. More mature security model than Engram's planned Phase 5.
+- **[shared-memory-mcp](https://github.com/haasonsaas/shared-memory-mcp)** — Shared memory MCP server for agentic teams. Focuses on token efficiency and context deduplication rather than consistency, but occupies the same "shared MCP memory" niche.
+- **[Memorix](https://github.com/AVIDS2/memorix)** — Cross-agent memory bridge for 10+ IDEs. Team collaboration features, workspace sync. No conflict detection but broad IDE integration.
+
+---
+
+## Revised Landscape at a Glance
+
+| Paper/System | Scope | Consistency | Conflict Detection | Threat Level to Engram |
+|---|---|---|---|---|
+| He et al. [5] (Global Consistency) | Theory | Proves pairwise insufficient | Proposes MUS algorithm | **Critical** — undermines core detection approach |
+| Bharti et al. [6] (Semantic Collapse) | Retrieval | Shows embedding failure for negation | N/A | **Critical** — candidate retrieval will miss contradictions |
+| Chana et al. [7] (Orthogonality) | Retrieval | Shows embedding degradation at scale | N/A | **High** — retrieval degrades as facts accumulate |
+| Xu et al. [8] (Mandela Effect) | Multi-agent | Shows collective false memory | N/A | **High** — Engram could amplify errors |
+| Cemri et al. [9] (MAS Failures) | Multi-agent | 36.9% failures from misalignment | N/A | **Medium** — contradiction is only one failure mode |
+| Ahmed et al. [12] (Agreeableness) | LLM-as-Judge | Shows 75%+ false negative rate | N/A | **Critical** — LLM judge will miss most contradictions |
+| httphangar [13] (Messy Reality) | Detection | 0.6%–45.6% accuracy on self-contradictions | N/A | **High** — numeric/temporal contradictions missed |
+| Zhao et al. [15] (Collaborative Memory) | Access control | Dynamic asymmetric policies | N/A | **Medium** — more sophisticated than Engram's Phase 5 |
+| Xu et al. [16] (SEDM) | Scalability | Self-evolving consolidation | N/A | **High** — append-only will not scale |
+| mem0 | Production | Single-user | No | **Medium** — could add conflict detection |
+| SAMEP | Protocol | Secure sharing | No | **Medium** — better security model |
+| arXiv:2503.03704 (MINJA) | Security | Memory injection via queries | N/A | **Critical** — Engram has no write-admission defense |
+| SQLite WAL docs | Storage | Single-writer serialization | N/A | **High** — parallel agent commits will stall under load |
+| Embedding drift (arXiv:2025) | Storage | Silent index corruption on upgrade | N/A | **High** — stored blobs become stale after model swap |
+| Confidence calibration (arXiv:2025) | Epistemics | LLM self-reported confidence unreliable | N/A | **High** — `confidence` field is systematically inflated |
