@@ -120,7 +120,7 @@ Engram is specifically for the consistency problem: what happens when Agent A an
 
 Multi-agent workflows are becoming standard. The tooling for orchestrating agents exists. The tooling for keeping their knowledge consistent does not.
 
-A position paper presented at the Architecture 2.0 Workshop (March 2026) identified multi-agent memory consistency as the most pressing open challenge in agentic systems. Engram is a working implementation of one answer.
+[*Multi-Agent Memory from a Computer Architecture Perspective: Visions and Challenges Ahead*](https://arxiv.org/abs/2603.10062) (Yu et al., Architecture 2.0 Workshop, March 2026) frames multi-agent memory as a computer architecture problem — proposing a three-layer hierarchy (I/O, cache, memory), identifying missing protocols for cache sharing and memory access control, and naming **multi-agent memory consistency** as the most pressing open challenge in agentic systems. Engram is a working implementation of one answer.
 
 <br />
 
