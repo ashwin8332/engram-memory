@@ -154,20 +154,6 @@ Full literature review: [`LITERATURE.md`](./LITERATURE.md) · Implementation pla
 
 <br />
 
-## Roadmap
-
-| Phase | What | Status |
-|:---:|---|---|
-| 1 | Schema and storage (bitemporal facts, conflict tables) | ✅ Complete |
-| 2 | Core MCP server (commit, query) | ✅ Complete |
-| 3 | Conflict detection (tiered async pipeline) | ✅ Complete |
-| 4 | Resolution workflow | ✅ Complete |
-| 5 | Auth and access control (local → team → enterprise) | ✅ Complete |
-| 6 | Cross-team federation | ✅ Complete |
-| 7 | Dashboard UI | ✅ Complete |
-
-<br />
-
 ## Contributing
 
 PRs welcome. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for guidelines.
