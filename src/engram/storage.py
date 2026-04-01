@@ -430,6 +430,18 @@ class Storage:
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 
+    async def get_agents_by_ids(self, agent_ids: set[str]) -> dict[str, dict]:
+        """Fetch multiple agents by ID in a single query. Returns {agent_id: agent}."""
+        if not agent_ids:
+            return {}
+        placeholders = ",".join(["?"] * len(agent_ids))
+        cursor = await self.db.execute(
+            f"SELECT * FROM agents WHERE agent_id IN ({placeholders})",
+            list(agent_ids),
+        )
+        rows = await cursor.fetchall()
+        return {r["agent_id"]: dict(r) for r in rows}
+
     async def get_expiring_facts(self, days_ahead: int = 7) -> list[dict]:
         """Get facts with TTL that will expire within days_ahead days."""
         cursor = await self.db.execute(

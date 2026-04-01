@@ -214,6 +214,10 @@ class EngramEngine:
         # Score candidates using RRF fusion
         open_conflict_ids = await self.storage.get_open_conflict_fact_ids()
 
+        # Batch-fetch all agents referenced by candidates (avoids N+1 per fact)
+        agent_ids = {f["agent_id"] for f in candidates if f.get("agent_id")}
+        agent_map = await self.storage.get_agents_by_ids(agent_ids)
+
         # Build embedding rank map
         emb_scores: list[tuple[float, dict]] = []
         for fact in candidates:
@@ -254,13 +258,18 @@ class EngramEngine:
                 recency = 0.5
 
             # Agent trust signal
-            agent = await self.storage.get_agent(fact["agent_id"])
+            agent = agent_map.get(fact.get("agent_id", ""))
             if agent and agent["total_commits"] > 0:
                 trust = 1.0 - (agent["flagged_commits"] / agent["total_commits"])
             else:
                 trust = 0.8  # default for unknown agents
 
             score = relevance + 0.2 * recency + 0.15 * trust
+
+            # Penalize facts with unresolved conflicts — value shouldn't
+            # require a human to review before the ranking reflects uncertainty
+            if fid in open_conflict_ids:
+                score *= 0.7
 
             scored.append((score, fact))
 
@@ -380,17 +389,36 @@ class EngramEngine:
     # ── Detection Worker (Phase 3) ───────────────────────────────────
 
     async def _detection_worker(self) -> None:
-        """Background worker consuming from the detection queue."""
+        """Background worker consuming from the detection queue.
+
+        Runs up to 3 detections concurrently so a burst of commits from
+        multiple agents doesn't serialize behind a slow NLI call.
+        """
         logger.info("Detection worker running")
-        while True:
-            try:
+        semaphore = asyncio.Semaphore(3)
+        active: set[asyncio.Task[None]] = set()
+        try:
+            while True:
                 fact_id = await self._detection_queue.get()
+                task = asyncio.create_task(
+                    self._detect_with_semaphore(fact_id, semaphore)
+                )
+                active.add(task)
+                task.add_done_callback(active.discard)
+        except asyncio.CancelledError:
+            for t in list(active):
+                t.cancel()
+
+    async def _detect_with_semaphore(
+        self, fact_id: str, semaphore: asyncio.Semaphore
+    ) -> None:
+        async with semaphore:
+            try:
                 await self._run_detection(fact_id)
-                self._detection_queue.task_done()
-            except asyncio.CancelledError:
-                break
             except Exception:
-                logger.exception("Detection worker error for fact %s", fact_id)
+                logger.exception("Detection error for fact %s", fact_id)
+            finally:
+                self._detection_queue.task_done()
 
     async def _run_detection(self, fact_id: str) -> None:
         """Run the tiered detection pipeline for a newly committed fact."""
@@ -431,9 +459,6 @@ class EngramEngine:
                                 "status": "open",
                             })
                             tier0_flagged.add(c["id"])
-                            # Flag both agents
-                            await self.storage.increment_agent_flagged(fact["agent_id"])
-                            await self.storage.increment_agent_flagged(c["agent_id"])
 
         # ── Tier 2b: Cross-scope entity detection ────────────────────
         tier2b_flagged: set[str] = set()
@@ -503,8 +528,6 @@ class EngramEngine:
                                     "status": "open",
                                 })
                                 tier2_flagged.add(candidate["id"])
-                                await self.storage.increment_agent_flagged(fact["agent_id"])
-                                await self.storage.increment_agent_flagged(candidate["agent_id"])
 
         # ── Tier 1: NLI cross-encoder ────────────────────────────────
         # Gather candidates via three parallel paths:
@@ -586,12 +609,14 @@ class EngramEngine:
                             "detected_at": now,
                             "detection_tier": "tier1_nli",
                             "nli_score": contradiction_score,
-                            "explanation": None,
+                            "explanation": (
+                                f"Semantic contradiction (NLI score: {contradiction_score:.2f}): "
+                                f'"{fact["content"][:80]}..." vs '
+                                f'"{candidate["content"][:80]}..."'
+                            ),
                             "severity": severity,
                             "status": "open",
                         })
-                        await self.storage.increment_agent_flagged(fact["agent_id"])
-                        await self.storage.increment_agent_flagged(candidate["agent_id"])
 
             except Exception:
                 logger.exception("NLI inference failed for pair %s / %s", fact_id, candidate["id"])
