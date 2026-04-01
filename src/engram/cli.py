@@ -91,7 +91,7 @@ async def _serve(
             from starlette.applications import Starlette
             from starlette.routing import Mount
 
-            dashboard_routes = build_dashboard_routes(storage)
+            dashboard_routes = build_dashboard_routes(storage, engine)
             federation_routes = build_federation_routes(storage)
             app = Starlette(
                 routes=dashboard_routes + federation_routes + [

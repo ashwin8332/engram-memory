@@ -30,7 +30,24 @@ class Storage:
         self._db = await aiosqlite.connect(str(self.db_path))
         self._db.row_factory = aiosqlite.Row
         await self._db.executescript(SCHEMA_SQL)
-        # Store schema version
+
+        # Run pending migrations for existing databases.
+        # New databases have no schema_meta row yet — skip migrations because
+        # SCHEMA_SQL already includes all columns.
+        cursor = await self._db.execute(
+            "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+        )
+        row = await cursor.fetchone()
+        if row is not None:
+            from engram.schema import MIGRATIONS
+            current_version = int(row["value"])
+            for version in range(current_version + 1, SCHEMA_VERSION + 1):
+                for stmt in MIGRATIONS.get(version, []):
+                    try:
+                        await self._db.execute(stmt)
+                    except Exception:
+                        pass  # Column already exists — migration is idempotent
+
         await self._db.execute(
             "INSERT OR REPLACE INTO schema_meta(key, value) VALUES (?, ?)",
             ("schema_version", str(SCHEMA_VERSION)),
@@ -298,6 +315,97 @@ class Storage:
         )
         row = await cursor.fetchone()
         return dict(row) if row else None
+
+    async def get_conflict_with_facts(self, conflict_id: str) -> dict | None:
+        """Fetch a single conflict with both facts' content joined in (for rendering)."""
+        cursor = await self.db.execute(
+            """SELECT c.*,
+                      fa.content as fact_a_content, fa.scope as fact_a_scope,
+                      fa.agent_id as fact_a_agent, fa.confidence as fact_a_confidence,
+                      fb.content as fact_b_content, fb.scope as fact_b_scope,
+                      fb.agent_id as fact_b_agent, fb.confidence as fact_b_confidence
+               FROM conflicts c
+               JOIN facts fa ON c.fact_a_id = fa.id
+               JOIN facts fb ON c.fact_b_id = fb.id
+               WHERE c.id = ?""",
+            (conflict_id,),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def update_conflict_suggestion(
+        self,
+        conflict_id: str,
+        suggested_resolution: str,
+        suggested_resolution_type: str,
+        suggested_winning_fact_id: str | None,
+        suggestion_reasoning: str,
+        suggestion_generated_at: str,
+    ) -> None:
+        """Store the LLM-generated resolution suggestion on a conflict."""
+        await self.db.execute(
+            """UPDATE conflicts SET
+               suggested_resolution = ?,
+               suggested_resolution_type = ?,
+               suggested_winning_fact_id = ?,
+               suggestion_reasoning = ?,
+               suggestion_generated_at = ?
+               WHERE id = ?""",
+            (
+                suggested_resolution,
+                suggested_resolution_type,
+                suggested_winning_fact_id,
+                suggestion_reasoning,
+                suggestion_generated_at,
+                conflict_id,
+            ),
+        )
+        await self.db.commit()
+
+    async def auto_resolve_conflict(
+        self,
+        conflict_id: str,
+        resolution_type: str,
+        resolution: str,
+        resolved_by: str,
+        escalated_at: str | None = None,
+    ) -> bool:
+        """Resolve a conflict programmatically (system-driven). Sets auto_resolved=1."""
+        now = _now_iso()
+        cursor = await self.db.execute(
+            """UPDATE conflicts
+               SET status = ?,
+                   resolution_type = ?,
+                   resolution = ?,
+                   resolved_by = ?,
+                   resolved_at = ?,
+                   auto_resolved = 1,
+                   escalated_at = ?
+               WHERE id = ? AND status = 'open'""",
+            (
+                "dismissed" if resolution_type == "dismissed" else "resolved",
+                resolution_type,
+                resolution,
+                resolved_by,
+                now,
+                escalated_at,
+                conflict_id,
+            ),
+        )
+        await self.db.commit()
+        return cursor.rowcount > 0
+
+    async def get_stale_open_conflicts(self, older_than_hours: int = 72) -> list[dict]:
+        """Return open conflicts that have gone unreviewed past the escalation window."""
+        cursor = await self.db.execute(
+            """SELECT * FROM conflicts
+               WHERE status = 'open'
+                 AND datetime(detected_at) < datetime('now', ? || ' hours')
+               ORDER BY detected_at ASC""",
+            (f"-{older_than_hours}",),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
 
     async def insert_detection_feedback(
         self, conflict_id: str, feedback: str

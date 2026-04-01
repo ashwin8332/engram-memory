@@ -11,10 +11,13 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from engram.engine import EngramEngine
 
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Route
 
 from engram.storage import Storage
@@ -22,7 +25,7 @@ from engram.storage import Storage
 logger = logging.getLogger("engram")
 
 
-def build_dashboard_routes(storage: Storage) -> list[Route]:
+def build_dashboard_routes(storage: Storage, engine: Any = None) -> list[Route]:
     """Build all dashboard routes."""
 
     async def landing(request: Request) -> HTMLResponse:
@@ -54,7 +57,68 @@ def build_dashboard_routes(storage: Storage) -> list[Route]:
         scope = request.query_params.get("scope")
         status = request.query_params.get("status", "open")
         conflicts = await storage.get_conflicts(scope=scope, status=status)
-        return HTMLResponse(_render_conflicts_table(conflicts))
+        return HTMLResponse(_render_conflicts_page(conflicts))
+
+    async def approve_suggestion(request: Request) -> Response:
+        """HTMX endpoint: approve the LLM-suggested resolution for a conflict."""
+        conflict_id = request.path_params["conflict_id"]
+        if engine is None:
+            return HTMLResponse(
+                '<p style="color:#dc2626">Engine not available</p>', status_code=503
+            )
+        conflict = await storage.get_conflict_by_id(conflict_id)
+        if not conflict:
+            return HTMLResponse(
+                '<p style="color:#dc2626">Conflict not found</p>', status_code=404
+            )
+        if conflict["status"] != "open":
+            full = await storage.get_conflict_with_facts(conflict_id)
+            return HTMLResponse(_render_conflict_card(full or conflict))
+
+        resolution_type = conflict.get("suggested_resolution_type") or "winner"
+        resolution = conflict.get("suggested_resolution") or "Approved via dashboard."
+        winning_id = conflict.get("suggested_winning_fact_id")
+
+        try:
+            await engine.resolve(
+                conflict_id=conflict_id,
+                resolution_type=resolution_type,
+                resolution=f"[Dashboard approved] {resolution}",
+                winning_claim_id=winning_id,
+            )
+        except Exception as exc:
+            return HTMLResponse(
+                f'<p style="color:#dc2626">Error: {_esc(str(exc))}</p>', status_code=400
+            )
+
+        updated = await storage.get_conflict_with_facts(conflict_id)
+        return HTMLResponse(_render_conflict_card(updated or conflict))
+
+    async def dismiss_conflict(request: Request) -> Response:
+        """HTMX endpoint: dismiss a conflict as a false positive."""
+        conflict_id = request.path_params["conflict_id"]
+        if engine is None:
+            return HTMLResponse(
+                '<p style="color:#dc2626">Engine not available</p>', status_code=503
+            )
+        conflict = await storage.get_conflict_by_id(conflict_id)
+        if not conflict or conflict["status"] != "open":
+            full = await storage.get_conflict_with_facts(conflict_id)
+            return HTMLResponse(_render_conflict_card(full or conflict or {}))
+
+        try:
+            await engine.resolve(
+                conflict_id=conflict_id,
+                resolution_type="dismissed",
+                resolution="Dismissed via dashboard — false positive.",
+            )
+        except Exception as exc:
+            return HTMLResponse(
+                f'<p style="color:#dc2626">Error: {_esc(str(exc))}</p>', status_code=400
+            )
+
+        updated = await storage.get_conflict_with_facts(conflict_id)
+        return HTMLResponse(_render_conflict_card(updated or conflict))
 
     async def timeline(request: Request) -> HTMLResponse:
         scope = request.query_params.get("scope")
@@ -76,6 +140,8 @@ def build_dashboard_routes(storage: Storage) -> list[Route]:
         Route("/dashboard", index, methods=["GET"]),
         Route("/dashboard/facts", knowledge_base, methods=["GET"]),
         Route("/dashboard/conflicts", conflict_queue, methods=["GET"]),
+        Route("/dashboard/conflicts/{conflict_id}/approve", approve_suggestion, methods=["POST"]),
+        Route("/dashboard/conflicts/{conflict_id}/dismiss", dismiss_conflict, methods=["POST"]),
         Route("/dashboard/timeline", timeline, methods=["GET"]),
         Route("/dashboard/agents", agents_view, methods=["GET"]),
         Route("/dashboard/expiring", expiring_view, methods=["GET"]),
@@ -210,9 +276,63 @@ _DASH_STYLE = """
   .table-wrap table { margin: 0; }
   .count-note { color: #5a8a5a; font-size: 0.75rem; margin-top: 0.75rem; }
 
+  /* Conflict cards */
+  .conflict-cards { display: flex; flex-direction: column; gap: 1rem; }
+  .conflict-card { background: #fff; border: 1px solid #c6e9c6;
+                   border-radius: 12px; padding: 1.25rem;
+                   box-shadow: 0 1px 3px rgba(0,80,0,0.04); }
+  .conflict-card.auto-resolved { border-color: #e2f2e2; opacity: 0.8; }
+  .conflict-header { display: flex; align-items: center; gap: 0.5rem;
+                     flex-wrap: wrap; margin-bottom: 0.9rem; }
+  .conflict-id { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
+                 color: #9ab89a; }
+  .tier-tag { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem;
+              background: #f0f9f0; color: #5a8a5a; padding: 0.1rem 0.4rem;
+              border-radius: 4px; border: 1px solid #c6e9c6; }
+  .escalation-note { font-size: 0.7rem; color: #d97706; margin-left: auto; }
+  .badge-auto { background: #e0f2fe; color: #0369a1; }
+
+  .conflict-facts { display: grid; grid-template-columns: 1fr auto 1fr;
+                    gap: 0.75rem; align-items: start; margin-bottom: 0.75rem; }
+  .fact-box { background: #f7fdf7; border: 1px solid #e2f2e2;
+              border-radius: 8px; padding: 0.75rem; }
+  .fact-content { font-size: 0.82rem; color: #1a3a1a; margin-bottom: 0.35rem;
+                  line-height: 1.45; }
+  .fact-meta { font-size: 0.7rem; color: #9ab89a; }
+  .vs-divider { display: flex; align-items: center; padding-top: 1rem;
+                font-size: 0.75rem; font-weight: 600; color: #d97706; }
+
+  .conflict-explanation { font-size: 0.78rem; color: #5a8a5a;
+                           font-style: italic; margin-bottom: 0.75rem; }
+
+  .suggestion-box { background: #f0fdf4; border: 1px solid #86efac;
+                    border-radius: 8px; padding: 0.9rem; margin-bottom: 0.75rem; }
+  .suggestion-header { display: flex; align-items: center; gap: 0.5rem;
+                       font-size: 0.75rem; font-weight: 600; color: #15803d;
+                       margin-bottom: 0.5rem; }
+  .suggestion-text { font-size: 0.82rem; color: #1a3a1a; margin-bottom: 0.4rem; }
+  .suggestion-reasoning { font-size: 0.75rem; color: #5a8a5a; margin-bottom: 0.75rem; }
+  .suggestion-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+  .btn-approve { background: #dcfce7; color: #15803d; border: 1px solid #86efac;
+                 border-radius: 8px; padding: 0.4rem 0.9rem; font-size: 0.78rem;
+                 cursor: pointer; font-family: 'DM Sans', sans-serif; font-weight: 500;
+                 transition: all 0.15s; }
+  .btn-approve:hover { background: #bbf7d0; }
+  .btn-dismiss { background: #f0f9f0; color: #5a8a5a; border: 1px solid #c6e9c6;
+                 border-radius: 8px; padding: 0.4rem 0.9rem; font-size: 0.78rem;
+                 cursor: pointer; font-family: 'DM Sans', sans-serif;
+                 transition: all 0.15s; }
+  .btn-dismiss:hover { background: #e2f2e2; }
+
+  .resolution-note { font-size: 0.75rem; color: #5a8a5a; padding-top: 0.5rem;
+                     border-top: 1px solid #e2f2e2; margin-top: 0.75rem; }
+
   @media (max-width: 640px) {
     .stats { grid-template-columns: repeat(2, 1fr); }
     .content-cell { max-width: 180px; }
+    .conflict-facts { grid-template-columns: 1fr; }
+    .vs-divider { display: none; }
   }
 </style>
 """
@@ -353,25 +473,14 @@ def _render_facts_table(facts: list[dict], conflict_ids: set[str]) -> str:
     return _dash_layout("Knowledge Base", body, active="facts")
 
 
-def _render_conflicts_table(conflicts: list[dict]) -> str:
-    rows = []
-    for c in conflicts:
-        sev = c.get("severity", "low")
-        status = c.get("status", "open")
-        sev_badge = f'<span class="badge badge-{sev}">{sev}</span>'
-        status_badge = f'<span class="badge badge-{status}">{status}</span>'
-        rows.append(
-            f"<tr><td>{_esc(c['id'][:12])}...</td>"
-            f"<td class='content-cell'>{_esc(c.get('fact_a_content', ''))}</td>"
-            f"<td class='content-cell'>{_esc(c.get('fact_b_content', ''))}</td>"
-            f"<td>{_esc(c.get('detection_tier', ''))}</td>"
-            f"<td>{sev_badge}</td><td>{status_badge}</td>"
-            f"<td>{_esc(c.get('detected_at', '')[:19])}</td></tr>"
-        )
+def _render_conflicts_page(conflicts: list[dict]) -> str:
+    cards = "".join(_render_conflict_card(c) for c in conflicts)
+    if not cards:
+        cards = '<p style="color:#9ab89a;font-size:0.85rem;padding:1rem 0;">No conflicts found.</p>'
     body = f"""
     <h2>Conflict Queue</h2>
     <div class="filter-bar">
-      <form method="get" action="/dashboard/conflicts" style="display:flex;gap:0.5rem;">
+      <form method="get" action="/dashboard/conflicts" style="display:flex;gap:0.5rem;flex-wrap:wrap;">
         <input name="scope" placeholder="Scope filter" value="">
         <select name="status">
           <option value="open">Open</option>
@@ -382,15 +491,169 @@ def _render_conflicts_table(conflicts: list[dict]) -> str:
         <button type="submit">Filter</button>
       </form>
     </div>
-    <div class="table-wrap">
-    <table>
-      <tr><th>ID</th><th>Fact A</th><th>Fact B</th><th>Tier</th>
-          <th>Severity</th><th>Status</th><th>Detected</th></tr>
-      {"".join(rows)}
-    </table>
-    </div>
+    <div class="conflict-cards">{cards}</div>
     <p class="count-note">{len(conflicts)} conflict(s)</p>"""
     return _dash_layout("Conflicts", body, active="conflicts")
+
+
+def _render_conflict_card(c: dict) -> str:
+    """Render one conflict as a self-contained card (also used for HTMX swap targets)."""
+    cid = c.get("id", "")
+    sev = c.get("severity", "low")
+    status = c.get("status", "open")
+    auto = c.get("auto_resolved", 0)
+    detected = c.get("detected_at", "")[:19]
+
+    # Header badges
+    sev_badge = f'<span class="badge badge-{sev}">{sev}</span>'
+    if auto:
+        status_badge = '<span class="badge badge-auto">auto-resolved</span>'
+    else:
+        status_badge = f'<span class="badge badge-{status}">{status}</span>'
+    tier_tag = f'<span class="tier-tag">{_esc(c.get("detection_tier", ""))}</span>'
+
+    # Escalation countdown (only for open conflicts)
+    escalation_html = ""
+    if status == "open":
+        try:
+            detected_dt = datetime.fromisoformat(c["detected_at"])
+            now_dt = datetime.now(timezone.utc)
+            hours_elapsed = (now_dt - detected_dt).total_seconds() / 3600
+            hours_remaining = 72 - hours_elapsed
+            if hours_remaining > 0:
+                escalation_html = (
+                    f'<span class="escalation-note">'
+                    f'auto-escalates in {hours_remaining:.0f}h</span>'
+                )
+            else:
+                escalation_html = (
+                    '<span class="escalation-note" style="color:#dc2626;">'
+                    'escalation overdue</span>'
+                )
+        except Exception:
+            pass
+
+    # Fact boxes
+    def _fact_box(content: str, scope: str, agent: str, confidence: float) -> str:
+        return (
+            f'<div class="fact-box">'
+            f'<div class="fact-content">{_esc(content)}</div>'
+            f'<div class="fact-meta">'
+            f'scope: {_esc(scope)} &middot; '
+            f'conf: {confidence:.2f} &middot; '
+            f'agent: {_esc(agent)}'
+            f'</div></div>'
+        )
+
+    fact_a_box = _fact_box(
+        c.get("fact_a_content", ""),
+        c.get("fact_a_scope", ""),
+        c.get("fact_a_agent", ""),
+        float(c.get("fact_a_confidence") or 0),
+    )
+    fact_b_box = _fact_box(
+        c.get("fact_b_content", ""),
+        c.get("fact_b_scope", ""),
+        c.get("fact_b_agent", ""),
+        float(c.get("fact_b_confidence") or 0),
+    )
+
+    explanation = c.get("explanation", "")
+    expl_html = (
+        f'<div class="conflict-explanation">{_esc(explanation)}</div>'
+        if explanation else ""
+    )
+
+    # Suggestion section
+    suggestion_html = ""
+    suggested_type = c.get("suggested_resolution_type", "")
+    suggested_text = c.get("suggested_resolution", "")
+    reasoning = c.get("suggestion_reasoning", "")
+
+    if suggested_text and status == "open":
+        type_badge = f'<span class="badge badge-low">{_esc(suggested_type)}</span>'
+        winning_id = c.get("suggested_winning_fact_id") or ""
+        winning_label = ""
+        if suggested_type == "winner" and winning_id:
+            if winning_id == c.get("fact_a_id"):
+                winning_label = " · keep Fact A"
+            elif winning_id == c.get("fact_b_id"):
+                winning_label = " · keep Fact B"
+
+        approve_btn = (
+            f'<button class="btn-approve" '
+            f'hx-post="/dashboard/conflicts/{_esc(cid)}/approve" '
+            f'hx-target="#conflict-{_esc(cid)}" '
+            f'hx-swap="outerHTML" '
+            f'hx-indicator="#conflict-{_esc(cid)}">'
+            f'Approve{_esc(winning_label)}</button>'
+        )
+        dismiss_btn = (
+            f'<button class="btn-dismiss" '
+            f'hx-post="/dashboard/conflicts/{_esc(cid)}/dismiss" '
+            f'hx-target="#conflict-{_esc(cid)}" '
+            f'hx-swap="outerHTML">'
+            f'Dismiss</button>'
+        )
+        suggestion_html = (
+            f'<div class="suggestion-box">'
+            f'<div class="suggestion-header">'
+            f'Suggested Resolution {type_badge}</div>'
+            f'<div class="suggestion-text">{_esc(suggested_text)}</div>'
+            f'<div class="suggestion-reasoning">Reasoning: {_esc(reasoning)}</div>'
+            f'<div class="suggestion-actions">{approve_btn}{dismiss_btn}</div>'
+            f'</div>'
+        )
+    elif status == "open" and not suggested_text:
+        # No suggestion yet — show a dismiss-only button
+        dismiss_btn = (
+            f'<button class="btn-dismiss" '
+            f'hx-post="/dashboard/conflicts/{_esc(cid)}/dismiss" '
+            f'hx-target="#conflict-{_esc(cid)}" '
+            f'hx-swap="outerHTML">'
+            f'Dismiss</button>'
+        )
+        suggestion_html = (
+            f'<div class="suggestion-box" style="background:#f7fdf7;">'
+            f'<div class="suggestion-header" style="color:#9ab89a;">'
+            f'Suggestion pending...</div>'
+            f'<div class="suggestion-actions" style="margin-top:0.5rem;">{dismiss_btn}</div>'
+            f'</div>'
+        )
+
+    # Resolution note (for resolved/dismissed/auto-resolved)
+    resolution_html = ""
+    if status != "open" or auto:
+        res_text = c.get("resolution", "")
+        res_type = c.get("resolution_type", "")
+        res_by = c.get("resolved_by", "")
+        res_at = (c.get("resolved_at") or "")[:19]
+        if res_text:
+            auto_note = " (auto)" if auto else ""
+            resolution_html = (
+                f'<div class="resolution-note">'
+                f'Resolved{auto_note} as <strong>{_esc(res_type)}</strong>'
+                f' by {_esc(res_by)} at {_esc(res_at)}: {_esc(res_text)}'
+                f'</div>'
+            )
+
+    card_cls = "conflict-card auto-resolved" if auto else "conflict-card"
+    return (
+        f'<div class="{card_cls}" id="conflict-{_esc(cid)}">'
+        f'<div class="conflict-header">'
+        f'{sev_badge}{status_badge}{tier_tag}'
+        f'<span class="conflict-id">{_esc(cid[:12])}...</span>'
+        f'<span style="font-size:0.7rem;color:#9ab89a;">{_esc(detected)}</span>'
+        f'{escalation_html}'
+        f'</div>'
+        f'<div class="conflict-facts">{fact_a_box}'
+        f'<div class="vs-divider">vs</div>'
+        f'{fact_b_box}</div>'
+        f'{expl_html}'
+        f'{suggestion_html}'
+        f'{resolution_html}'
+        f'</div>'
+    )
 
 
 def _render_timeline(facts: list[dict]) -> str:

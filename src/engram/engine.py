@@ -31,9 +31,12 @@ class EngramEngine:
     def __init__(self, storage: Storage) -> None:
         self.storage = storage
         self._detection_queue: asyncio.Queue[str] = asyncio.Queue()
+        self._suggestion_queue: asyncio.Queue[str] = asyncio.Queue()
         self._detection_task: asyncio.Task[None] | None = None
         self._ttl_task: asyncio.Task[None] | None = None
         self._calibration_task: asyncio.Task[None] | None = None
+        self._suggestion_task: asyncio.Task[None] | None = None
+        self._escalation_task: asyncio.Task[None] | None = None
         self._nli_model: Any = None
         self._nli_threshold_high: float = 0.85
         self._nli_threshold_low: float = 0.50
@@ -43,11 +46,16 @@ class EngramEngine:
         self._detection_task = asyncio.create_task(self._detection_worker())
         self._ttl_task = asyncio.create_task(self._ttl_expiry_loop())
         self._calibration_task = asyncio.create_task(self._calibration_loop())
+        self._suggestion_task = asyncio.create_task(self._suggestion_worker())
+        self._escalation_task = asyncio.create_task(self._escalation_loop())
         logger.info("Detection worker started")
 
     async def stop(self) -> None:
         """Stop all background tasks."""
-        for task in (self._detection_task, self._ttl_task, self._calibration_task):
+        for task in (
+            self._detection_task, self._ttl_task, self._calibration_task,
+            self._suggestion_task, self._escalation_task,
+        ):
             if task:
                 task.cancel()
                 try:
@@ -57,6 +65,8 @@ class EngramEngine:
         self._detection_task = None
         self._ttl_task = None
         self._calibration_task = None
+        self._suggestion_task = None
+        self._escalation_task = None
 
     # ── engram_commit ────────────────────────────────────────────────
 
@@ -328,6 +338,13 @@ class EngramEngine:
                 "detected_at": r["detected_at"],
                 "resolution": r.get("resolution"),
                 "resolution_type": r.get("resolution_type"),
+                "auto_resolved": bool(r.get("auto_resolved")),
+                "escalated_at": r.get("escalated_at"),
+                "suggested_resolution": r.get("suggested_resolution"),
+                "suggested_resolution_type": r.get("suggested_resolution_type"),
+                "suggested_winning_fact_id": r.get("suggested_winning_fact_id"),
+                "suggestion_reasoning": r.get("suggestion_reasoning"),
+                "suggestion_generated_at": r.get("suggestion_generated_at"),
             })
         return results
 
@@ -444,8 +461,9 @@ class EngramEngine:
                     if c["id"] not in tier0_flagged:
                         already = await self.storage.conflict_exists(fact_id, c["id"])
                         if not already:
+                            conflict_id = uuid.uuid4().hex
                             await self.storage.insert_conflict({
-                                "id": uuid.uuid4().hex,
+                                "id": conflict_id,
                                 "fact_a_id": fact_id,
                                 "fact_b_id": c["id"],
                                 "detected_at": now,
@@ -458,6 +476,7 @@ class EngramEngine:
                                 "severity": "high",
                                 "status": "open",
                             })
+                            await self._suggestion_queue.put(conflict_id)
                             tier0_flagged.add(c["id"])
 
         # ── Tier 2b: Cross-scope entity detection ────────────────────
@@ -476,8 +495,9 @@ class EngramEngine:
                             continue  # Already handled by Tier 0
                         already = await self.storage.conflict_exists(fact_id, c["id"])
                         if not already:
+                            conflict_id = uuid.uuid4().hex
                             await self.storage.insert_conflict({
-                                "id": uuid.uuid4().hex,
+                                "id": conflict_id,
                                 "fact_a_id": fact_id,
                                 "fact_b_id": c["id"],
                                 "detected_at": now,
@@ -490,6 +510,7 @@ class EngramEngine:
                                 "severity": "high",
                                 "status": "open",
                             })
+                            await self._suggestion_queue.put(conflict_id)
                             tier2b_flagged.add(c["id"])
 
         # ── Tier 2: Numeric and temporal rules (parallel with Tier 1) ────
@@ -513,8 +534,9 @@ class EngramEngine:
                         if candidate["id"] not in tier2_flagged:
                             already = await self.storage.conflict_exists(fact_id, candidate["id"])
                             if not already:
+                                conflict_id = uuid.uuid4().hex
                                 await self.storage.insert_conflict({
-                                    "id": uuid.uuid4().hex,
+                                    "id": conflict_id,
                                     "fact_a_id": fact_id,
                                     "fact_b_id": candidate["id"],
                                     "detected_at": now,
@@ -527,6 +549,7 @@ class EngramEngine:
                                     "severity": "high",
                                     "status": "open",
                                 })
+                                await self._suggestion_queue.put(conflict_id)
                                 tier2_flagged.add(candidate["id"])
 
         # ── Tier 1: NLI cross-encoder ────────────────────────────────
@@ -602,8 +625,9 @@ class EngramEngine:
                     already = await self.storage.conflict_exists(fact_id, candidate["id"])
                     if not already:
                         severity = "high" if fact.get("engineer") != candidate.get("engineer") else "medium"
+                        conflict_id = uuid.uuid4().hex
                         await self.storage.insert_conflict({
-                            "id": uuid.uuid4().hex,
+                            "id": conflict_id,
                             "fact_a_id": fact_id,
                             "fact_b_id": candidate["id"],
                             "detected_at": now,
@@ -617,9 +641,105 @@ class EngramEngine:
                             "severity": severity,
                             "status": "open",
                         })
+                        await self._suggestion_queue.put(conflict_id)
 
             except Exception:
                 logger.exception("NLI inference failed for pair %s / %s", fact_id, candidate["id"])
+
+    # ── Suggestion Worker (async, post-detection) ────────────────────
+
+    async def _suggestion_worker(self) -> None:
+        """Consume conflict IDs and generate LLM resolution suggestions."""
+        logger.info("Suggestion worker running")
+        try:
+            while True:
+                conflict_id = await self._suggestion_queue.get()
+                try:
+                    await self._generate_and_store_suggestion(conflict_id)
+                except Exception:
+                    logger.exception("Suggestion generation error for conflict %s", conflict_id)
+                finally:
+                    self._suggestion_queue.task_done()
+        except asyncio.CancelledError:
+            pass
+
+    async def _generate_and_store_suggestion(self, conflict_id: str) -> None:
+        """Generate an LLM suggestion for one conflict and persist it."""
+        from engram import suggester
+
+        conflict = await self.storage.get_conflict_by_id(conflict_id)
+        if not conflict or conflict["status"] != "open":
+            return
+        if conflict.get("suggested_resolution"):
+            return  # Already has a suggestion
+
+        fact_a = await self.storage.get_fact_by_id(conflict["fact_a_id"])
+        fact_b = await self.storage.get_fact_by_id(conflict["fact_b_id"])
+        if not fact_a or not fact_b:
+            return
+
+        suggestion = await suggester.generate_suggestion(fact_a, fact_b, conflict)
+        if suggestion:
+            await self.storage.update_conflict_suggestion(conflict_id, **suggestion)
+            logger.debug("Suggestion stored for conflict %s", conflict_id)
+
+    # ── 72-hour escalation loop ──────────────────────────────────────
+
+    async def _escalation_loop(self) -> None:
+        """Every hour: auto-resolve conflicts that have been open for 72h+ without review."""
+        while True:
+            try:
+                await asyncio.sleep(3600)  # check every hour
+                stale = await self.storage.get_stale_open_conflicts(older_than_hours=72)
+                for conflict in stale:
+                    try:
+                        await self._escalate_conflict(conflict)
+                    except Exception:
+                        logger.exception("Escalation error for conflict %s", conflict["id"])
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.exception("Escalation loop error")
+
+    async def _escalate_conflict(self, conflict: dict[str, Any]) -> None:
+        """Auto-resolve a stale conflict by preferring the more recent fact.
+
+        Closes the older fact's validity window and records a clear audit trail
+        indicating this was a system action, not a human decision.
+        """
+        fact_a = await self.storage.get_fact_by_id(conflict["fact_a_id"])
+        fact_b = await self.storage.get_fact_by_id(conflict["fact_b_id"])
+        if not fact_a or not fact_b:
+            return
+
+        # Prefer the more recently committed fact
+        a_time = fact_a.get("committed_at", "")
+        b_time = fact_b.get("committed_at", "")
+        if a_time >= b_time:
+            winner, loser = fact_a, fact_b
+        else:
+            winner, loser = fact_b, fact_a
+
+        await self.storage.close_validity_window(fact_id=loser["id"])
+        await self.storage.increment_agent_flagged(loser["agent_id"])
+
+        now = datetime.now(timezone.utc).isoformat()
+        await self.storage.auto_resolve_conflict(
+            conflict_id=conflict["id"],
+            resolution_type="winner",
+            resolution=(
+                f"Auto-escalated after 72h without human review. "
+                f"Preferred newer fact '{winner['id'][:8]}' "
+                f"(committed {winner.get('committed_at', 'unknown')[:19]}). "
+                f"Human review recommended — override via engram_resolve."
+            ),
+            resolved_by="system:escalation",
+            escalated_at=now,
+        )
+        logger.info(
+            "Auto-escalated conflict %s — preferred newer fact %s",
+            conflict["id"][:12], winner["id"][:8],
+        )
 
     def _get_nli_model(self) -> Any:
         """Lazy-load the NLI cross-encoder model."""

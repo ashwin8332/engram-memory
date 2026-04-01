@@ -5,7 +5,22 @@ Supersession, correction, archival, and versioning are all expressed
 through this single primitive.
 """
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+# Incremental ALTER TABLE migrations keyed by target version.
+# Each entry is a list of SQL statements to execute in order.
+# Wrapped in try/except in storage.connect() — idempotent.
+MIGRATIONS: dict[int, list[str]] = {
+    2: [
+        "ALTER TABLE conflicts ADD COLUMN suggested_resolution TEXT",
+        "ALTER TABLE conflicts ADD COLUMN suggested_resolution_type TEXT",
+        "ALTER TABLE conflicts ADD COLUMN suggested_winning_fact_id TEXT",
+        "ALTER TABLE conflicts ADD COLUMN suggestion_reasoning TEXT",
+        "ALTER TABLE conflicts ADD COLUMN suggestion_generated_at TEXT",
+        "ALTER TABLE conflicts ADD COLUMN auto_resolved INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE conflicts ADD COLUMN escalated_at TEXT",
+    ],
+}
 
 SCHEMA_SQL = """
 PRAGMA journal_mode=WAL;
@@ -61,19 +76,28 @@ END;
 
 -- Conflict tracking
 CREATE TABLE IF NOT EXISTS conflicts (
-    id               TEXT PRIMARY KEY,
-    fact_a_id        TEXT NOT NULL REFERENCES facts(id),
-    fact_b_id        TEXT NOT NULL REFERENCES facts(id),
-    detected_at      TEXT NOT NULL,
-    detection_tier   TEXT NOT NULL,
-    nli_score        REAL,
-    explanation      TEXT,
-    severity         TEXT NOT NULL,
-    status           TEXT NOT NULL DEFAULT 'open',
-    resolved_by      TEXT,
-    resolved_at      TEXT,
-    resolution       TEXT,
-    resolution_type  TEXT
+    id                          TEXT PRIMARY KEY,
+    fact_a_id                   TEXT NOT NULL REFERENCES facts(id),
+    fact_b_id                   TEXT NOT NULL REFERENCES facts(id),
+    detected_at                 TEXT NOT NULL,
+    detection_tier              TEXT NOT NULL,
+    nli_score                   REAL,
+    explanation                 TEXT,
+    severity                    TEXT NOT NULL,
+    status                      TEXT NOT NULL DEFAULT 'open',
+    resolved_by                 TEXT,
+    resolved_at                 TEXT,
+    resolution                  TEXT,
+    resolution_type             TEXT,
+    -- Suggested resolution (LLM-generated)
+    suggested_resolution        TEXT,
+    suggested_resolution_type   TEXT,
+    suggested_winning_fact_id   TEXT,
+    suggestion_reasoning        TEXT,
+    suggestion_generated_at     TEXT,
+    -- Auto-resolution audit trail
+    auto_resolved               INTEGER NOT NULL DEFAULT 0,
+    escalated_at                TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_conflicts_status ON conflicts(status);
