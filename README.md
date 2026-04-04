@@ -35,7 +35,7 @@ When two agents develop incompatible beliefs about the same system, Engram detec
 ## Install
 
 ```bash
-pip install engram-memory
+pip install engram-team
 engram install
 ```
 
@@ -176,7 +176,7 @@ No database needed. Engram defaults to local SQLite:
   "mcpServers": {
     "engram": {
       "command": "uvx",
-      "args": ["engram-memory@latest"]
+      "args": ["engram-team@latest"]
     }
   }
 }
