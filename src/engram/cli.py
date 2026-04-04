@@ -370,7 +370,6 @@ def install(dry_run: bool) -> None:
     """Auto-detect MCP clients and add Engram to their config."""
     added = []
     skipped = []
-    not_found = []
     steering_written = []
 
     for client_name, info in _MCP_CLIENTS.items():
@@ -378,22 +377,22 @@ def install(dry_run: bool) -> None:
         key: str = info["key"]
         fmt = info.get("format", "json")
 
-        if not config_path.exists():
-            not_found.append(client_name)
-            continue
-
         try:
             if fmt == "toml":
                 # Handle TOML format (Codex)
                 try:
                     import tomli
                     import tomli_w
-                    data = tomli.loads(config_path.read_text())
+
+                    if config_path.exists():
+                        data = tomli.loads(config_path.read_text())
+                    else:
+                        data = {}
+
                     servers = data.setdefault(key, {})
                     
                     if "engram" in servers:
                         skipped.append(client_name)
-                        # Still write steering if missing
                         steering_written.extend(_write_steering(client_name, dry_run))
                         continue
                     
@@ -413,12 +412,15 @@ def install(dry_run: bool) -> None:
                     continue
             else:
                 # Handle JSON format
-                data = json.loads(config_path.read_text())
+                if config_path.exists():
+                    data = json.loads(config_path.read_text())
+                else:
+                    data = {}
+
                 servers = data.setdefault(key, {})
 
                 if "engram" in servers:
                     skipped.append(client_name)
-                    # Still write steering if missing
                     steering_written.extend(_write_steering(client_name, dry_run))
                     continue
 
@@ -443,8 +445,6 @@ def install(dry_run: bool) -> None:
         click.echo(f"⊙ Already configured: {', '.join(skipped)}")
     if steering_written:
         click.echo(f"📝 Agent instructions written to: {', '.join(steering_written)}")
-    if not_found:
-        click.echo(f"⊘ Not installed (skipped): {', '.join(not_found)}")
 
     if added:
         click.echo("\n→ Restart your editor and ask your agent: 'Set up Engram for my team'")
