@@ -10,7 +10,7 @@ Two schemas are maintained:
 - POSTGRES_SCHEMA_SQL: PostgreSQL (team mode, asyncpg)
 """
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # Incremental ALTER TABLE migrations keyed by target version.
 MIGRATIONS: dict[int, list[str]] = {
@@ -47,6 +47,10 @@ MIGRATIONS: dict[int, list[str]] = {
             uses_remaining   INTEGER
         )""",
     ],
+    5: [
+        # Phase 2: Corroboration tracking for multi-agent consensus
+        "ALTER TABLE facts ADD COLUMN corroborating_agents INTEGER NOT NULL DEFAULT 0",
+    ],
 }
 
 # ── SQLite schema (local mode) ───────────────────────────────────────
@@ -80,7 +84,8 @@ CREATE TABLE IF NOT EXISTS facts (
     ttl_days         INTEGER,
     memory_op        TEXT NOT NULL DEFAULT 'add',
     supersedes_fact_id TEXT,
-    workspace_id     TEXT NOT NULL DEFAULT 'local'
+    workspace_id     TEXT NOT NULL DEFAULT 'local',
+    corroborating_agents INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_facts_validity     ON facts(scope, valid_until);
@@ -221,6 +226,7 @@ CREATE TABLE IF NOT EXISTS facts (
     memory_op        TEXT NOT NULL DEFAULT 'add',
     supersedes_fact_id TEXT,
     workspace_id     TEXT NOT NULL DEFAULT 'local',
+    corroborating_agents INTEGER NOT NULL DEFAULT 0,
     search_vector    tsvector GENERATED ALWAYS AS (
         to_tsvector('english', coalesce(content, '') || ' ' || coalesce(scope, '') || ' ' || coalesce(keywords, ''))
     ) STORED

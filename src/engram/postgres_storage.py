@@ -631,6 +631,15 @@ class PostgresStorage(BaseStorage):
             ids.add(r["fact_b_id"])
         return ids
 
+    async def increment_corroboration(self, fact_id: str) -> None:
+        """Increment the corroboration counter for a fact (Phase 2: multi-agent consensus)."""
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE facts SET corroborating_agents = corroborating_agents + 1 "
+                "WHERE id = $1 AND workspace_id = $2",
+                fact_id, self.workspace_id,
+            )
+
     # ── Workspace / invite key methods ───────────────────────────────
 
     async def ensure_workspace(

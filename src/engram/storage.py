@@ -196,6 +196,9 @@ class BaseStorage(ABC):
     @abstractmethod
     async def get_open_conflict_fact_ids(self) -> set[str]: ...
 
+    @abstractmethod
+    async def increment_corroboration(self, fact_id: str) -> None: ...
+
     # ── Workspace / invite key methods (Phase 0) ─────────────────────
 
     async def ensure_workspace(self, engram_id: str, anonymous_mode: bool, anon_agents: bool) -> None:
@@ -849,6 +852,14 @@ class SQLiteStorage(BaseStorage):
             ids.add(r["fact_a_id"])
             ids.add(r["fact_b_id"])
         return ids
+
+    async def increment_corroboration(self, fact_id: str) -> None:
+        """Increment the corroboration counter for a fact (Phase 2: multi-agent consensus)."""
+        await self.db.execute(
+            "UPDATE facts SET corroborating_agents = corroborating_agents + 1 WHERE id = ?",
+            (fact_id,),
+        )
+        await self.db.commit()
 
     # ── Workspace / invite key methods (Phase 0) ─────────────────────
 

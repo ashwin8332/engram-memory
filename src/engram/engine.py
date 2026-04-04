@@ -275,6 +275,10 @@ class EngramEngine:
         # Step 13: Queue for async detection
         await self._detection_queue.put(fact_id)
 
+        # Step 14: Check for corroboration (Phase 2: multi-agent consensus)
+        # Find semantically similar facts from different agents in the same scope
+        await self._check_corroboration(fact_id, emb, agent_id, scope)
+
         return {
             "fact_id": fact_id,
             "committed_at": now,
@@ -294,7 +298,14 @@ class EngramEngine:
         as_of: str | None = None,
         fact_type: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Query what the team's agents collectively know about a topic."""
+        """Query what the team's agents collectively know about a topic.
+        
+        Enhanced scoring (Phase 1 + Phase 2):
+        - Prioritizes decisions over inferences over observations
+        - Boosts facts with provenance (verified claims)
+        - Rewards multi-agent corroboration
+        - Penalizes facts with open conflicts
+        """
         limit = min(limit, 50)
 
         # Get candidate facts
@@ -317,7 +328,7 @@ class EngramEngine:
         except Exception:
             pass  # FTS may fail on complex queries; fall back to embedding only
 
-        # Score candidates using RRF fusion
+        # Score candidates using RRF fusion + enhanced signals
         open_conflict_ids = await self.storage.get_open_conflict_fact_ids()
 
         # Batch-fetch all agents referenced by candidates (avoids N+1 per fact)
@@ -370,7 +381,37 @@ class EngramEngine:
             else:
                 trust = 0.8  # default for unknown agents
 
-            score = relevance + 0.2 * recency + 0.15 * trust
+            # Phase 1: Fact type weighting (decision > inference > observation)
+            fact_type_weight = {
+                "decision": 1.0,
+                "inference": 0.5,
+                "observation": 0.0,
+            }.get(fact.get("fact_type", "observation"), 0.0)
+
+            # Phase 1: Provenance boost (verified facts rank higher)
+            provenance_weight = 1.0 if fact.get("provenance") else 0.0
+
+            # Phase 2: Corroboration boost (multi-agent consensus)
+            corroboration_count = fact.get("corroborating_agents", 0)
+            corroboration_weight = math.log(1 + corroboration_count)
+
+            # Phase 1: Entity density (facts with structured entities are more actionable)
+            try:
+                entities = json.loads(fact.get("entities") or "[]")
+                entity_density = min(1.0, len(entities) / 5.0)  # cap at 5 entities
+            except (json.JSONDecodeError, TypeError):
+                entity_density = 0.0
+
+            # Combined score with enhanced signals
+            score = (
+                relevance
+                + 0.2 * recency
+                + 0.15 * agent_trust
+                + 0.1 * fact_type_weight
+                + 0.1 * provenance_weight
+                + 0.1 * corroboration_weight
+                + 0.05 * entity_density
+            )
 
             # Penalize facts with unresolved conflicts — value shouldn't
             # require a human to review before the ranking reflects uncertainty
@@ -396,6 +437,7 @@ class EngramEngine:
                 "has_open_conflict": fact["id"] in open_conflict_ids,
                 "verified": fact.get("provenance") is not None,
                 "provenance": fact.get("provenance"),
+                "corroborating_agents": fact.get("corroborating_agents", 0),
                 "relevance_score": round(score, 4),
             })
 
@@ -866,6 +908,56 @@ class EngramEngine:
                 logger.warning("NLI model not available. Tier 1 detection disabled.")
                 return None
         return self._nli_model
+
+    # ── Corroboration Detection (Phase 2) ────────────────────────────
+
+    async def _check_corroboration(
+        self, fact_id: str, fact_emb: np.ndarray, agent_id: str, scope: str
+    ) -> None:
+        """Check if this fact corroborates existing facts from other agents.
+        
+        When multiple independent agents commit semantically similar facts,
+        increment the corroboration counter on all matching facts. This signals
+        multi-agent consensus without requiring explicit quorum commits.
+        
+        Threshold: 0.85 cosine similarity (high semantic overlap)
+        """
+        try:
+            # Get active facts in scope with embeddings (exclude same agent)
+            candidates = await self.storage.get_active_facts_with_embeddings(
+                scope=scope, limit=50
+            )
+            
+            corroborated_ids: list[str] = []
+            for candidate in candidates:
+                # Skip facts from the same agent (not independent corroboration)
+                if candidate["agent_id"] == agent_id:
+                    continue
+                
+                # Skip the fact we just inserted
+                if candidate["id"] == fact_id:
+                    continue
+                
+                if candidate.get("embedding"):
+                    c_emb = embeddings.bytes_to_embedding(candidate["embedding"])
+                    sim = embeddings.cosine_similarity(fact_emb, c_emb)
+                    
+                    # High similarity = corroboration
+                    if sim >= 0.85:
+                        corroborated_ids.append(candidate["id"])
+            
+            # Increment corroboration count on all matching facts (including new one)
+            if corroborated_ids:
+                await self.storage.increment_corroboration(fact_id)
+                for cid in corroborated_ids:
+                    await self.storage.increment_corroboration(cid)
+                
+                logger.debug(
+                    "Corroboration detected: fact %s matches %d existing fact(s) from other agents",
+                    fact_id[:12], len(corroborated_ids)
+                )
+        except Exception:
+            logger.exception("Corroboration check failed for fact %s", fact_id)
 
     # ── Periodic TTL expiry ──────────────────────────────────────────
 

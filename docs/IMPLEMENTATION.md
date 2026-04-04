@@ -1057,12 +1057,58 @@ and flagged with a warning.
    This enables historical point-in-time queries without any additional machinery.
 3. **Dual retrieval:** Score via embedding cosine + FTS5 BM25 rank, fuse with RRF.
    FTS5 query: `SELECT rowid, rank FROM facts_fts WHERE facts_fts MATCH ? ORDER BY rank LIMIT 20`
-4. **Scoring:**
+4. **Scoring (Enhanced with Prioritized Retrieval):**
    ```
-   score = relevance              (RRF rank, 0-1 normalized)
-         + 0.2 * recency          (exp(-0.05 * days_since_commit))
-         + 0.15 * agent_trust     (1 - flagged_commits/total_commits)
+   score = relevance                    (RRF rank, 0-1 normalized)
+         + 0.2 * recency                (exp(-0.05 * days_since_commit))
+         + 0.15 * agent_trust           (1 - flagged_commits/total_commits)
+         + 0.1 * fact_type_weight       (decision=1.0, inference=0.5, observation=0.0)
+         + 0.1 * provenance_weight      (verified=1.0, unverified=0.0)
+         + 0.1 * corroboration_weight   (log(1 + corroborating_agents))
+         + 0.05 * entity_density        (min(1.0, entity_count / 5.0))
    ```
+   
+   **Prioritized Commit Retrieval (Schema v5):** Addresses the core retrieval problem:
+   "summaries always miss the one detail you needed." When querying 1000 facts, which
+   10 should surface first? The enhanced scoring applies write-gating principles to
+   read-gating:
+   
+   - **Fact type weighting (Phase 1):** Decisions capture "why" and rank higher than
+     raw observations. Decision logs (architectural choices, tradeoffs) are more valuable
+     than observations (what was seen) or inferences (what was concluded).
+   
+   - **Provenance boost (Phase 1):** Facts with `provenance` (artifact hashes, test
+     results, documentation links) are verified claims and rank higher than speculation.
+     This aligns with SEDM's verifiable write admission pattern — provenance makes facts
+     auditable and distinguishable from unverified claims.
+   
+   - **Entity density (Phase 1):** Facts with extracted entities (numeric values, config
+     keys, versions) are more actionable and structured. Structured facts are easier to
+     validate and use in downstream reasoning.
+   
+   - **Multi-agent corroboration (Phase 2):** When multiple independent agents commit
+     semantically similar facts (≥0.85 cosine similarity), all matching facts get their
+     `corroborating_agents` counter incremented. This signals multi-agent consensus
+     without requiring heavyweight quorum commits. Corroboration check runs async after
+     commit (no write-path latency). The logarithmic weight prevents a single highly-
+     corroborated fact from dominating all results.
+   
+   **Impact:** Decision rationale surfaces before raw observations. Verified facts rank
+   higher than speculation. Multi-agent consensus is visible and rewarded. Structured,
+   actionable facts are prioritized. The "one detail you needed" is more likely in the
+   top 10 results.
+   
+   **Schema change (v5):** Added `corroborating_agents INTEGER NOT NULL DEFAULT 0` to
+   facts table. Migration is additive and backward-compatible.
+   
+   **Research alignment:**
+   - Yu et al. [1]: Cache layer (query results) optimized for relevance, memory layer
+     (storage) comprehensive
+   - MemFactory [5]: "Be picky about what gets stored and how it can be updated" —
+     extended to "be picky about what gets retrieved"
+   - Feedback pattern: "Write-gating > read-gating" — Engram already had strong
+     write-gating (secret scanning, dedup, entity extraction), now has strong read-gating
+   
    **Confidence handling (Round 6 revision):** Raw agent-reported confidence is excluded
    from the scoring formula because LLMs systematically over-report confidence (Round 3
    finding). However, confidence is not permanently discarded. Once sufficient calibration
