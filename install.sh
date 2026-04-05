@@ -131,6 +131,13 @@ if [ -f "$WINDSURF" ] || [ -d "$HOME/.codeium/windsurf" ]; then
   PATCHED=$((PATCHED + 1))
 fi
 
+# Kiro (~/.kiro/settings/mcp.json)
+KIRO="$HOME/.kiro/settings/mcp.json"
+if [ -f "$KIRO" ] || [ -d "$HOME/.kiro" ]; then
+  patch_json "$KIRO"
+  PATCHED=$((PATCHED + 1))
+fi
+
 # ── Result ─────────────────────────────────────────────────────────
 echo ""
 if [ "$PATCHED" -eq 0 ]; then

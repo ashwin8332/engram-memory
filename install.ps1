@@ -97,6 +97,13 @@ if (Test-Path "$env:USERPROFILE\.codeium\windsurf") {
     $patched++
 }
 
+# Kiro (~/.kiro/settings/mcp.json)
+$kiro = "$env:USERPROFILE\.kiro\settings\mcp.json"
+if (Test-Path "$env:USERPROFILE\.kiro") {
+    Patch-McpJson $kiro
+    $patched++
+}
+
 # ── Result ─────────────────────────────────────────────────────────
 Write-Host ''
 if ($patched -eq 0) {

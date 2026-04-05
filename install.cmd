@@ -63,6 +63,12 @@ if exist "%USERPROFILE%\.codeium\windsurf" (
     set /a PATCHED+=1
 )
 
+REM Kiro
+if exist "%USERPROFILE%\.kiro" (
+    call :patch_json "%USERPROFILE%\.kiro\settings\mcp.json"
+    set /a PATCHED+=1
+)
+
 REM ── Result ───────────────────────────────────────────────────────
 echo.
 if %PATCHED% equ 0 (
