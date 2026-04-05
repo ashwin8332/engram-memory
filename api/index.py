@@ -127,24 +127,7 @@ def _render_landing() -> str:
       border: 2px solid #059669;
     }
     
-    .code-block .copy-btn {
-      position: absolute;
-      top: 12px;
-      right: 12px;
-      background: #059669;
-      color: white;
-      border: none;
-      padding: 6px 14px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 600;
-      transition: background 0.2s;
-    }
-    
-    .code-block .copy-btn:hover {
-      background: #047857;
-    }
+    /* (copy-btn styles moved below with toast) */
     
     .step {
       font-size: 15px;
@@ -249,7 +232,67 @@ def _render_landing() -> str:
       color: #047857;
       font-style: italic;
     }
-    
+
+    /* Copy toast notification */
+    .copy-toast {
+      position: fixed;
+      bottom: 32px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: #064e3b;
+      color: #d1fae5;
+      padding: 12px 24px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease, transform 0.3s ease;
+      z-index: 1000;
+    }
+
+    .copy-toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .copy-toast svg {
+      flex-shrink: 0;
+    }
+
+    /* Copy button ripple effect */
+    .code-block .copy-btn {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: #059669;
+      color: white;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      transition: background 0.2s, transform 0.15s;
+      overflow: hidden;
+    }
+
+    .code-block .copy-btn:hover {
+      background: #047857;
+    }
+
+    .code-block .copy-btn:active {
+      transform: scale(0.95);
+    }
+
+    .code-block .copy-btn.copied {
+      background: #047857;
+    }
+
     /* Responsive */
     @media (max-width: 768px) {
       h1 { font-size: 32px; }
@@ -369,15 +412,33 @@ def _render_landing() -> str:
     </div>
   </footer>
 
+  <!-- Copy toast -->
+  <div class="copy-toast" id="copy-toast">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="7.5" stroke="#34d399" stroke-width="1"/>
+      <path d="M5 8.5L7 10.5L11 6" stroke="#34d399" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <span id="copy-toast-text">Copied to clipboard</span>
+  </div>
+
   <script>
+    let toastTimeout;
     function copyCode(id) {
       const el = document.getElementById(id);
       const text = el.textContent.trim();
       navigator.clipboard.writeText(text).then(() => {
         const btn = event.target;
-        const originalText = btn.textContent;
-        btn.textContent = 'Copied!';
-        setTimeout(() => btn.textContent = originalText, 2000);
+        btn.textContent = '✓ Copied';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = 'Copy';
+          btn.classList.remove('copied');
+        }, 2000);
+
+        const toast = document.getElementById('copy-toast');
+        clearTimeout(toastTimeout);
+        toast.classList.add('show');
+        toastTimeout = setTimeout(() => toast.classList.remove('show'), 2200);
       }).catch(err => {
         console.error('Failed to copy:', err);
       });
