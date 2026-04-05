@@ -81,6 +81,18 @@ def _render_landing() -> str:
     }
     .copy-btn:hover { background: #047857; }
     .copy-btn:active { transform: scale(0.95); }
+    .platform-tabs { display: flex; gap: 0; margin-bottom: 0; }
+    .tab {
+      padding: 10px 20px; border: none; background: #e2e8f0; color: #475569;
+      font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit;
+      transition: background 0.2s, color 0.2s;
+    }
+    .tab:first-child { border-radius: 8px 0 0 0; }
+    .tab:last-child { border-radius: 0 8px 0 0; }
+    .tab.active { background: #064e3b; color: #d1fae5; }
+    .tab:not(.active):hover { background: #cbd5e1; }
+    .platform-tabs + .code-block,
+    .platform-tabs ~ .code-block { border-radius: 0 12px 12px 12px; margin-top: 0; }
     .step { font-size: 15px; color: #047857; margin-bottom: 12px; font-weight: 500; }
     .note { font-size: 14px; color: #047857; line-height: 1.6; text-align: center; margin-top: 20px; }
 
@@ -221,9 +233,22 @@ def _render_landing() -> str:
   <div class="card">
     <h2 class="section-title">Get Started</h2>
     <div class="step">1. Run the installer</div>
-    <div class="code-block">
+    <div class="platform-tabs">
+      <button class="tab active" onclick="switchTab('mac')">macOS / Linux</button>
+      <button class="tab" onclick="switchTab('ps')">Windows PowerShell</button>
+      <button class="tab" onclick="switchTab('cmd')">Windows CMD</button>
+    </div>
+    <div class="code-block" id="tab-mac">
+      <button class="copy-btn" onclick="copyCode('install-mac')">Copy</button>
+      <div id="install-mac">curl -fsSL https://engram.app/install | sh</div>
+    </div>
+    <div class="code-block" id="tab-ps" style="display:none;">
+      <button class="copy-btn" onclick="copyCode('install-ps')">Copy</button>
+      <div id="install-ps">irm https://engram.app/install.ps1 | iex</div>
+    </div>
+    <div class="code-block" id="tab-cmd" style="display:none;">
       <button class="copy-btn" onclick="copyCode('install-cmd')">Copy</button>
-      <div id="install-cmd">curl -fsSL https://engram.app/install | sh</div>
+      <div id="install-cmd">curl -fsSL https://engram.app/install.cmd -o install.cmd && install.cmd && del install.cmd</div>
     </div>
     <div class="step">2. Restart your IDE</div>
     <div class="step">3. Ask your agent</div>
@@ -332,6 +357,22 @@ def _render_landing() -> str:
 </div>
 
 <script>
+// ── Platform tab switcher ──────────────────────────────────────────
+function switchTab(platform) {
+  ['mac','ps','cmd'].forEach(p => {
+    document.getElementById('tab-' + p).style.display = p === platform ? '' : 'none';
+  });
+  document.querySelectorAll('.platform-tabs .tab').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('onclick').includes("'" + platform + "'"));
+  });
+}
+
+// Auto-detect platform
+(function() {
+  const ua = navigator.userAgent || navigator.platform || '';
+  if (/Win/i.test(ua)) switchTab('ps');
+})();
+
 // ── Copy helper ────────────────────────────────────────────────────
 let toastTimeout;
 function copyCode(id) {

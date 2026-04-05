@@ -24,6 +24,8 @@
     { "source": "/workspace", "destination": "/api/workspace" },
     { "source": "/workspace/(.*)", "destination": "/api/workspace" },
     { "source": "/install", "destination": "/api/install" },
+    { "source": "/install.ps1", "destination": "/api/install" },
+    { "source": "/install.cmd", "destination": "/api/install" },
     { "source": "/(.*)", "destination": "/api/index" }
   ]
 }
