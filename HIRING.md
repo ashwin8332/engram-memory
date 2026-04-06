@@ -53,3 +53,5 @@ We hire through contribution — your work is your application.
 3. Reply with your GitHub username or a link to your contribution
 
 Strong contributors receive paid contract offers ($35–$65/hour, weekly). We review every submission and follow up directly.
+
+To be considered, send your resume and GitHub username (or a link to your contribution) to **healthandwellness884@gmail.com**.
