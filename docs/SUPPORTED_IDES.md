@@ -80,3 +80,45 @@ To join an existing workspace:
 ```bash
 curl -fsSL https://engram-us.com/install | sh -s -- --join ek_live_YOUR_KEY
 ```
+## Verification and troubleshooting
+
+After installation:
+
+1. Restart or reload your IDE if it was already open.
+2. Ask your agent to call `engram_status`.
+3. If you are joining an existing workspace, use your invite key during install or ask your agent to join with it.
+
+Opening the MCP endpoint directly in a browser is not a reliable verification step. Verify the integration through your IDE’s agent/tool interface.
+
+### Expected install output
+
+Install output varies by platform and by which IDEs are present on the machine. A typical successful run looks like this:
+
+```text
+Do you have an invite key from a teammate? (y/n):
+Detecting MCP clients...
+  ✓ /path/to/your/mcp.json
+
+Done! Restart your IDE, then ask your agent:
+
+  "Set up Engram for my team"    — to create a new workspace
+  "Join Engram with key ek_live_..."  — to join a teammate's workspace
+```
+
+If you install with `--join`, the final line will instead look like:
+
+```text
+"Set up Engram"  — your agent will connect to your workspace
+```
+
+### Cursor
+**Common failure:** Cursor was not restarted after installation.  
+**Fix:** Restart Cursor, then ask your agent to call `engram_status` again.
+
+### VS Code
+**Common failure:** VS Code uses `servers.engram`, not `mcpServers.engram`.  
+**Fix:** Confirm Engram was written under `servers`, restart VS Code, then ask your agent to call `engram_status` again.
+
+### Claude Code
+**Common failure:** Claude Code is confused with Claude Desktop.  
+**Fix:** Check `~/.claude.json`, restart Claude Code, then ask your agent to call `engram_status` again.
