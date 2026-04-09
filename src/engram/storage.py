@@ -8,7 +8,6 @@ The Storage alias keeps existing imports working.
 
 from __future__ import annotations
 
-import json
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
@@ -389,12 +388,30 @@ class SQLiteStorage(BaseStorage):
             "memory_op",
             "supersedes_fact_id",
             "durability",
-            "id", "lineage_id", "content", "content_hash", "scope",
-            "confidence", "fact_type", "agent_id", "engineer", "provenance",
-            "keywords", "entities", "artifact_hash", "embedding",
-            "embedding_model", "embedding_ver", "committed_at",
-            "valid_from", "valid_until", "ttl_days",
-            "memory_op", "supersedes_fact_id", "workspace_id", "durability",
+            "id",
+            "lineage_id",
+            "content",
+            "content_hash",
+            "scope",
+            "confidence",
+            "fact_type",
+            "agent_id",
+            "engineer",
+            "provenance",
+            "keywords",
+            "entities",
+            "artifact_hash",
+            "embedding",
+            "embedding_model",
+            "embedding_ver",
+            "committed_at",
+            "valid_from",
+            "valid_until",
+            "ttl_days",
+            "memory_op",
+            "supersedes_fact_id",
+            "workspace_id",
+            "durability",
         ]
         defaults = {"memory_op": "add", "durability": "durable", "workspace_id": self.workspace_id}
         placeholders = ", ".join(["?"] * len(cols))
@@ -689,9 +706,7 @@ class SQLiteStorage(BaseStorage):
         )
         return await cursor.fetchone() is not None
 
-    async def get_conflicts(
-        self, scope: str | None = None, status: str = "open"
-    ) -> list[dict]:
+    async def get_conflicts(self, scope: str | None = None, status: str = "open") -> list[dict]:
         conditions = ["c.workspace_id = ?"]
         params: list[Any] = [self.workspace_id]
 
@@ -841,7 +856,10 @@ class SQLiteStorage(BaseStorage):
                  AND workspace_id = ?
                  AND datetime(detected_at) < datetime('now', ? || ' hours')
                ORDER BY detected_at ASC""",
-            (self.workspace_id, f"-{older_than_hours}",),
+            (
+                self.workspace_id,
+                f"-{older_than_hours}",
+            ),
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
@@ -932,9 +950,7 @@ class SQLiteStorage(BaseStorage):
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 
-    async def get_active_facts_with_embeddings(
-        self, scope: str, limit: int = 20
-    ) -> list[dict]:
+    async def get_active_facts_with_embeddings(self, scope: str, limit: int = 20) -> list[dict]:
         """Return active facts in scope and workspace that have embeddings (for auto-update scoring)."""
         cursor = await self.db.execute(
             """SELECT * FROM facts
@@ -1089,9 +1105,7 @@ class SQLiteStorage(BaseStorage):
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 
-    async def get_fact_timeline(
-        self, scope: str | None = None, limit: int = 100
-    ) -> list[dict]:
+    async def get_fact_timeline(self, scope: str | None = None, limit: int = 100) -> list[dict]:
         """Get facts in this workspace ordered by valid_from for timeline view."""
         conditions: list[str] = ["workspace_id = ?"]
         params: list[Any] = [self.workspace_id]
@@ -1172,8 +1186,7 @@ class SQLiteStorage(BaseStorage):
 
         # ── conflicts ───────────────────────────────────────────────
         cur = await self.db.execute(
-            "SELECT status, COUNT(*) as cnt FROM conflicts "
-            "WHERE workspace_id = ? GROUP BY status",
+            "SELECT status, COUNT(*) as cnt FROM conflicts WHERE workspace_id = ? GROUP BY status",
             (ws,),
         )
         conflict_by_status: dict[str, int] = {}
@@ -1197,8 +1210,7 @@ class SQLiteStorage(BaseStorage):
         total_agents = len(agent_rows)
         most_active = agent_rows[0]["agent_id"] if agent_rows else None
         trust_scores = [
-            1.0 - (r["flagged_commits"] / r["total_commits"])
-            if r["total_commits"] > 0 else 0.8
+            1.0 - (r["flagged_commits"] / r["total_commits"]) if r["total_commits"] > 0 else 0.8
             for r in agent_rows
         ]
         avg_trust = round(sum(trust_scores) / len(trust_scores), 3) if trust_scores else None

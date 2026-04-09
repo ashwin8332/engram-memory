@@ -104,7 +104,7 @@ async def engram_status() -> dict[str, Any]:
 
     Returns: {status, next_prompt?, engram_id?, mode?}
     """
-    from engram.workspace import is_configured, is_team_mode, read_workspace, WORKSPACE_PATH
+    from engram.workspace import read_workspace, WORKSPACE_PATH
 
     ws = read_workspace()
 
@@ -418,7 +418,6 @@ async def engram_reset_invite_key(
         }
 
     import time
-    from datetime import timezone
 
     # Revoke all existing invite keys and bump the generation counter
     await _storage.revoke_all_invite_keys(ws.engram_id)
@@ -846,6 +845,7 @@ async def engram_batch_commit(
 
     # Key generation check
     from engram.workspace import read_workspace as _rw
+
     _ws = _rw()
     _disc = await _check_key_generation(_ws)
     if _disc:
@@ -928,6 +928,7 @@ async def engram_feedback(
     """
     engine = get_engine()
     from engram.workspace import read_workspace as _rw
+
     _ws = _rw()
     _disc = await _check_key_generation(_ws)
     if _disc:
@@ -953,6 +954,7 @@ async def engram_timeline(
     """
     engine = get_engine()
     from engram.workspace import read_workspace as _rw
+
     _ws = _rw()
     _disc = await _check_key_generation(_ws)
     if _disc:
@@ -972,6 +974,7 @@ async def engram_agents() -> list[dict[str, Any]]:
     """
     engine = get_engine()
     from engram.workspace import read_workspace as _rw
+
     _ws = _rw()
     _disc = await _check_key_generation(_ws)
     if _disc:
@@ -994,6 +997,7 @@ async def engram_lineage(lineage_id: str) -> list[dict[str, Any]]:
     """
     engine = get_engine()
     from engram.workspace import read_workspace as _rw
+
     _ws = _rw()
     _disc = await _check_key_generation(_ws)
     if _disc:
@@ -1016,6 +1020,7 @@ async def engram_expiring(days_ahead: int = 7) -> list[dict[str, Any]]:
     """
     engine = get_engine()
     from engram.workspace import read_workspace as _rw
+
     _ws = _rw()
     _disc = await _check_key_generation(_ws)
     if _disc:
@@ -1050,6 +1055,7 @@ async def engram_bulk_dismiss(
     """
     engine = get_engine()
     from engram.workspace import read_workspace as _rw
+
     _ws = _rw()
     _disc = await _check_key_generation(_ws)
     if _disc:
@@ -1059,6 +1065,7 @@ async def engram_bulk_dismiss(
         reason=reason,
         dismissed_by=agent_id,
     )
+
 
 @mcp.tool(annotations={"readOnlyHint": True})
 async def engram_export(
@@ -1092,19 +1099,16 @@ async def engram_export(
     """
     engine = get_engine()
     from engram.workspace import read_workspace as _rw
+
     _ws = _rw()
     if not _ws:
-        return {
-            "error": "Workspace not initialized. Run engram_init first."
-        }
+        return {"error": "Workspace not initialized. Run engram_init first."}
     _disc = await _check_key_generation(_ws)
     if _disc:
         return _disc
 
     if format not in ("json", "markdown"):
-        return {
-            "error": f"Invalid format '{format}'. Supported: json, markdown"
-        }
+        return {"error": f"Invalid format '{format}'. Supported: json, markdown"}
 
     try:
         return await engine.export_workspace(format=format, scope=scope)
