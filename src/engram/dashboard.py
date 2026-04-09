@@ -32,24 +32,45 @@ def build_dashboard_routes(storage: Storage, engine: Any = None) -> list[Route]:
         return HTMLResponse(_render_landing())
 
     async def index(request: Request) -> HTMLResponse:
+        # Check workspace connection status
+        from engram.workspace import read_workspace
+
+        ws = read_workspace()
+        workspace_error = None
+        if ws is None:
+            workspace_error = "No workspace configured. Run 'engram setup' or 'engram init'."
+        elif ws.db_url:
+            # Try to verify connection by querying storage
+            try:
+                await storage.count_facts(current_only=False)
+            except Exception as e:
+                workspace_error = f"Workspace connection failed: {str(e)[:100]}"
+
         facts_count = await storage.count_facts(current_only=True)
         total_facts = await storage.count_facts(current_only=False)
         open_conflicts = await storage.count_conflicts("open")
         resolved_conflicts = await storage.count_conflicts("resolved")
         agents = await storage.get_agents()
         expiring = await storage.get_expiring_facts(days_ahead=7)
-        return HTMLResponse(_render_index(
-            facts_count=facts_count, total_facts=total_facts,
-            open_conflicts=open_conflicts, resolved_conflicts=resolved_conflicts,
-            agents=agents, expiring_count=len(expiring),
-        ))
+        return HTMLResponse(
+            _render_index(
+                facts_count=facts_count,
+                total_facts=total_facts,
+                open_conflicts=open_conflicts,
+                resolved_conflicts=resolved_conflicts,
+                agents=agents,
+                expiring_count=len(expiring),
+                workspace_error=workspace_error,
+            )
+        )
 
     async def knowledge_base(request: Request) -> HTMLResponse:
         scope = request.query_params.get("scope")
         fact_type = request.query_params.get("fact_type")
         as_of = request.query_params.get("as_of")
         facts = await storage.get_current_facts_in_scope(
-            scope=scope, fact_type=fact_type, as_of=as_of, limit=100)
+            scope=scope, fact_type=fact_type, as_of=as_of, limit=100
+        )
         conflict_ids = await storage.get_open_conflict_fact_ids()
         return HTMLResponse(_render_facts_table(facts, conflict_ids))
 
@@ -68,9 +89,7 @@ def build_dashboard_routes(storage: Storage, engine: Any = None) -> list[Route]:
             )
         conflict = await storage.get_conflict_by_id(conflict_id)
         if not conflict:
-            return HTMLResponse(
-                '<p style="color:#dc2626">Conflict not found</p>', status_code=404
-            )
+            return HTMLResponse('<p style="color:#dc2626">Conflict not found</p>', status_code=404)
         if conflict["status"] != "open":
             full = await storage.get_conflict_with_facts(conflict_id)
             return HTMLResponse(_render_conflict_card(full or conflict))
@@ -151,11 +170,13 @@ def build_dashboard_routes(storage: Storage, engine: Any = None) -> list[Route]:
 # ── Landing page (mirrors api/index.py for local server) ────────────
 # Imported by the local server; the Vercel deployment uses api/index.py directly.
 
+
 def _render_landing() -> str:
     # Import the canonical version from api/index if available,
     # otherwise fall back to a minimal redirect.
     try:
         from api.index import _render_landing as _vercel_landing
+
         return _vercel_landing()
     except ImportError:
         pass
@@ -378,10 +399,29 @@ def _dash_layout(title: str, body: str, active: str = "") -> str:
 
 
 def _render_index(
-    facts_count: int, total_facts: int, open_conflicts: int,
-    resolved_conflicts: int, agents: list[dict], expiring_count: int,
+    facts_count: int,
+    total_facts: int,
+    open_conflicts: int,
+    resolved_conflicts: int,
+    agents: list[dict],
+    expiring_count: int,
+    workspace_error: str | None = None,
 ) -> str:
+    # Show workspace error if present
+    error_html = ""
+    if workspace_error:
+        error_html = f"""
+        <div style="background:#fee2e2;border:1px solid #ef4444;padding:12px;margin-bottom:16px;border-radius:6px;">
+            <strong style="color:#dc2626;">⚠ Workspace Connection Error</strong>
+            <p style="color:#991b1b;margin:8px 0 0 0;">{workspace_error}</p>
+            <p style="color:#7f1d1d;margin:8px 0 0 0;font-size:13px;">
+                Run <code>engram verify</code> to diagnose or <code>engram setup</code> to reconfigure.
+            </p>
+        </div>
+        """
+
     body = f"""
+    {error_html}
     <div class="stats">
       <div class="stat stat-accent">
         <div class="stat-value">{facts_count}</div>
@@ -522,13 +562,11 @@ def _render_conflict_card(c: dict) -> str:
             hours_remaining = 72 - hours_elapsed
             if hours_remaining > 0:
                 escalation_html = (
-                    f'<span class="escalation-note">'
-                    f'auto-escalates in {hours_remaining:.0f}h</span>'
+                    f'<span class="escalation-note">auto-escalates in {hours_remaining:.0f}h</span>'
                 )
             else:
                 escalation_html = (
-                    '<span class="escalation-note" style="color:#dc2626;">'
-                    'escalation overdue</span>'
+                    '<span class="escalation-note" style="color:#dc2626;">escalation overdue</span>'
                 )
         except Exception:
             pass
@@ -539,10 +577,10 @@ def _render_conflict_card(c: dict) -> str:
             f'<div class="fact-box">'
             f'<div class="fact-content">{_esc(content)}</div>'
             f'<div class="fact-meta">'
-            f'scope: {_esc(scope)} &middot; '
-            f'conf: {confidence:.2f} &middot; '
-            f'agent: {_esc(agent)}'
-            f'</div></div>'
+            f"scope: {_esc(scope)} &middot; "
+            f"conf: {confidence:.2f} &middot; "
+            f"agent: {_esc(agent)}"
+            f"</div></div>"
         )
 
     fact_a_box = _fact_box(
@@ -560,8 +598,7 @@ def _render_conflict_card(c: dict) -> str:
 
     explanation = c.get("explanation", "")
     expl_html = (
-        f'<div class="conflict-explanation">{_esc(explanation)}</div>'
-        if explanation else ""
+        f'<div class="conflict-explanation">{_esc(explanation)}</div>' if explanation else ""
     )
 
     # Suggestion section
@@ -586,23 +623,23 @@ def _render_conflict_card(c: dict) -> str:
             f'hx-target="#conflict-{_esc(cid)}" '
             f'hx-swap="outerHTML" '
             f'hx-indicator="#conflict-{_esc(cid)}">'
-            f'Approve{_esc(winning_label)}</button>'
+            f"Approve{_esc(winning_label)}</button>"
         )
         dismiss_btn = (
             f'<button class="btn-dismiss" '
             f'hx-post="/dashboard/conflicts/{_esc(cid)}/dismiss" '
             f'hx-target="#conflict-{_esc(cid)}" '
             f'hx-swap="outerHTML">'
-            f'Dismiss</button>'
+            f"Dismiss</button>"
         )
         suggestion_html = (
             f'<div class="suggestion-box">'
             f'<div class="suggestion-header">'
-            f'Suggested Resolution {type_badge}</div>'
+            f"Suggested Resolution {type_badge}</div>"
             f'<div class="suggestion-text">{_esc(suggested_text)}</div>'
             f'<div class="suggestion-reasoning">Reasoning: {_esc(reasoning)}</div>'
             f'<div class="suggestion-actions">{approve_btn}{dismiss_btn}</div>'
-            f'</div>'
+            f"</div>"
         )
     elif status == "open" and not suggested_text:
         # No suggestion yet — show a dismiss-only button
@@ -611,14 +648,14 @@ def _render_conflict_card(c: dict) -> str:
             f'hx-post="/dashboard/conflicts/{_esc(cid)}/dismiss" '
             f'hx-target="#conflict-{_esc(cid)}" '
             f'hx-swap="outerHTML">'
-            f'Dismiss</button>'
+            f"Dismiss</button>"
         )
         suggestion_html = (
             f'<div class="suggestion-box" style="background:#f7fdf7;">'
             f'<div class="suggestion-header" style="color:#9ab89a;">'
-            f'Suggestion pending...</div>'
+            f"Suggestion pending...</div>"
             f'<div class="suggestion-actions" style="margin-top:0.5rem;">{dismiss_btn}</div>'
-            f'</div>'
+            f"</div>"
         )
 
     # Resolution note (for resolved/dismissed/auto-resolved)
@@ -632,27 +669,27 @@ def _render_conflict_card(c: dict) -> str:
             auto_note = " (auto)" if auto else ""
             resolution_html = (
                 f'<div class="resolution-note">'
-                f'Resolved{auto_note} as <strong>{_esc(res_type)}</strong>'
-                f' by {_esc(res_by)} at {_esc(res_at)}: {_esc(res_text)}'
-                f'</div>'
+                f"Resolved{auto_note} as <strong>{_esc(res_type)}</strong>"
+                f" by {_esc(res_by)} at {_esc(res_at)}: {_esc(res_text)}"
+                f"</div>"
             )
 
     card_cls = "conflict-card auto-resolved" if auto else "conflict-card"
     return (
         f'<div class="{card_cls}" id="conflict-{_esc(cid)}">'
         f'<div class="conflict-header">'
-        f'{sev_badge}{status_badge}{tier_tag}'
+        f"{sev_badge}{status_badge}{tier_tag}"
         f'<span class="conflict-id">{_esc(cid[:12])}...</span>'
         f'<span style="font-size:0.7rem;color:#9ab89a;">{_esc(detected)}</span>'
-        f'{escalation_html}'
-        f'</div>'
+        f"{escalation_html}"
+        f"</div>"
         f'<div class="conflict-facts">{fact_a_box}'
         f'<div class="vs-divider">vs</div>'
-        f'{fact_b_box}</div>'
-        f'{expl_html}'
-        f'{suggestion_html}'
-        f'{resolution_html}'
-        f'</div>'
+        f"{fact_b_box}</div>"
+        f"{expl_html}"
+        f"{suggestion_html}"
+        f"{resolution_html}"
+        f"</div>"
     )
 
 
