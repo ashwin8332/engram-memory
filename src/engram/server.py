@@ -133,15 +133,8 @@ async def engram_status() -> dict[str, Any]:
     **API Version:** This tool is part of API version 1.0 (stable).
     """
     from engram.workspace import read_workspace, WORKSPACE_PATH
-    import engram.server as server_module
 
     ws = read_workspace()
-
-    # Include API version in response
-    result = {
-        "api_version": server_module.__api_version__,
-        "api_stable": True,
-    }
 
     if ws and ws.db_url:
         disconnected = await _check_key_generation(ws)
