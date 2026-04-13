@@ -436,27 +436,29 @@ async def _detect_conflicts(
         async def _check_batch(batch: list[dict]) -> list[dict]:
             facts_block = "\n".join(f"- {f['text']}" for f in batch)
             prompt = (
-                "You are a strict contradiction detector for a team knowledge base. "
-                "Facts are timestamped and recorded during active development.\n\n"
-                "RULES — read carefully:\n"
-                "1. A CONTRADICTION is when two facts make genuinely INCOMPATIBLE claims "
-                "about the SAME specific subject that cannot both be true simultaneously.\n"
-                "2. NATURAL PROGRESSION is NOT a contradiction. If a newer fact refines, "
-                "narrows, expands, or evolves an older fact, that is normal development — "
-                "do NOT flag it.\n"
-                "3. A fact that is a SUBSET of another (e.g., 'remove agents card' followed "
-                "by 'remove all cards') is progression, NOT contradiction.\n"
-                "4. Facts about DIFFERENT subjects are never contradictions, even if they "
-                "mention similar words.\n"
-                "5. When in doubt, do NOT flag. False positives are worse than missed "
-                "conflicts.\n"
-                "6. Use timestamps to understand ordering — later facts represent the "
-                "current state of decisions.\n\n"
-                f"NEW FACT (just committed): {content}\n\n"
-                f"EXISTING FACTS (with timestamps):\n{facts_block}\n\n"
-                "Respond with ONLY a JSON array. For each genuine contradiction:\n"
-                '[{"fact_id": "<first 8 chars of ID>", "explanation": "<one sentence>"}]\n\n'
-                "If no contradictions (the common case), respond with: []"
+                "You detect when AI agents are confused about the current state of a project. "
+                "Facts are timestamped — use both date AND time to understand ordering.\n\n"
+                "RULES:\n"
+                "1. Flag only when two facts make genuinely INCOMPATIBLE claims about the "
+                "SAME subject that cannot both be true right now.\n"
+                "2. NATURAL DEVELOPMENT is NOT confusion. Refining, narrowing, expanding, "
+                "or evolving a decision over time is normal — do NOT flag.\n"
+                "3. A newer fact that updates an older one is progression, not conflict.\n"
+                "4. Facts about DIFFERENT subjects are never conflicts.\n"
+                "5. When in doubt, do NOT flag. False positives erode trust.\n"
+                "6. Use timestamps (date + time) — facts minutes apart are likely the same "
+                "conversation evolving. Facts hours/days apart from different scopes are "
+                "more likely genuine confusion.\n\n"
+                f"NEW FACT: {content}\n\n"
+                f"EXISTING FACTS:\n{facts_block}\n\n"
+                "For each genuine confusion, return a JSON object with:\n"
+                '- "fact_id": first 8 chars of the conflicting fact ID\n'
+                '- "question": a concise yes/no question (max 2 sentences) that a human '
+                "can answer to resolve the confusion. Frame it as: 'Is X still true, or "
+                "has it changed to Y?'\n\n"
+                "Respond with ONLY a JSON array:\n"
+                '[{"fact_id": "abc12345", "question": "Is the queue backed by Postgres, or was it switched to Redis?"}]\n\n'
+                "If no confusions (the common case), respond with: []"
             )
             try:
                 import httpx
@@ -474,11 +476,11 @@ async def _detect_conflicts(
                                 {
                                     "role": "system",
                                     "content": (
-                                        "You detect contradictions in a team knowledge base. "
-                                        "Be extremely conservative — only flag facts that are "
-                                        "genuinely incompatible. Development naturally evolves "
-                                        "through refinement; that is not contradiction. "
-                                        "Respond only with valid JSON arrays."
+                                        "You detect when AI agents are confused about a project's "
+                                        "current state. Be extremely conservative — only flag "
+                                        "genuine confusion where an agent might act on outdated "
+                                        "or wrong information. Normal development evolution is "
+                                        "not confusion. Respond only with valid JSON arrays."
                                     ),
                                 },
                                 {"role": "user", "content": prompt},
@@ -525,7 +527,7 @@ async def _detect_conflicts(
                     if existing:
                         continue
                     cid = str(uuid.uuid4())
-                    explanation = conflict.get("explanation", "Semantic contradiction detected")
+                    explanation = conflict.get("question", "Conflicting information detected")
                     await conn.execute(
                         """INSERT INTO conflicts (id, fact_a_id, fact_b_id, explanation, severity, workspace_id)
                            VALUES ($1, $2, $3, $4, 'medium', $5) ON CONFLICT DO NOTHING""",

@@ -442,14 +442,26 @@ def _render_dashboard() -> str:
       border: 1px solid rgba(255,255,255,0.04); border-radius: 12px;
       transition: border-color 0.2s; }
     .conflict-card:hover { border-color: rgba(255,255,255,0.08); }
-    .conflict-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-    .conflict-status { font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
-      text-transform: uppercase; padding: 3px 10px; border-radius: 6px; }
-    .status-open { background: rgba(239,68,68,0.08); color: var(--red); }
-    .status-resolved { background: rgba(52,211,153,0.08); color: var(--em4); }
-    .conflict-explanation { font-size: 14px; color: var(--t2); line-height: 1.6; margin-bottom: 12px; }
+    .conflict-card.resolved { opacity: 0.5; }
+    .conflict-question { font-size: 15px; color: var(--t1); line-height: 1.5;
+      margin-bottom: 14px; font-weight: 500; }
+    .conflict-actions { display: flex; gap: 8px; margin-bottom: 12px; }
+    .btn-yes { padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 600;
+      background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.2);
+      color: var(--em4); cursor: pointer; font-family: inherit; transition: all 0.15s; }
+    .btn-yes:hover { background: rgba(52,211,153,0.18); }
+    .btn-no { padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 600;
+      background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+      color: var(--t2); cursor: pointer; font-family: inherit; transition: all 0.15s; }
+    .btn-no:hover { background: rgba(255,255,255,0.06); }
+    .conflict-resolved-note { font-size: 12px; color: var(--tm); margin-bottom: 8px; }
+    .conflict-details { margin-top: 4px; }
+    .conflict-details summary { font-size: 12px; color: var(--tm); cursor: pointer;
+      padding: 4px 0; transition: color 0.15s; }
+    .conflict-details summary:hover { color: var(--t2); }
+    .conflict-details[open] summary { margin-bottom: 10px; }
     .conflict-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .conflict-fact { padding: 14px; background: rgba(0,0,0,0.15); border-radius: 10px;
+    .conflict-fact { padding: 12px; background: rgba(0,0,0,0.15); border-radius: 10px;
       border: 1px solid rgba(255,255,255,0.03);
       font-size: 13px; color: var(--t2); line-height: 1.5; }
     .conflict-fact-label { font-size: 11px; font-weight: 600; color: var(--tm);
@@ -1525,7 +1537,7 @@ function renderDetail() {
     document.getElementById('stats-row').innerHTML = `
       <div class="conflict-indicator">
         <span class="conflict-count" data-target="${openC}">0</span>
-        <span class="conflict-label">open conflict${openC !== 1 ? 's' : ''}</span>
+        <span class="conflict-label">open confusion${openC !== 1 ? 's' : ''}</span>
       </div>`;
     // Animate counter
     const el = document.querySelector('.conflict-count[data-target]');
@@ -1830,7 +1842,7 @@ function renderConflicts() {
   if (!WS_DATA) return;
   const { conflicts, facts } = WS_DATA;
   const el = document.getElementById('conflict-list');
-  if (!conflicts.length) { el.innerHTML = '<div class="empty-state">No conflicts detected</div>'; return; }
+  if (!conflicts.length) { el.innerHTML = '<div class="empty-state">No confusions detected — your agents are aligned.</div>'; return; }
   const factMap = {};
   (facts||[]).forEach(f => factMap[f.id] = f);
   const sorted = [...conflicts].sort((a,b) => {
@@ -1840,19 +1852,54 @@ function renderConflicts() {
   });
   el.innerHTML = sorted.map(c => {
     const fa = factMap[c.fact_a_id], fb = factMap[c.fact_b_id];
-    const statusClass = c.status === 'open' ? 'status-open' : 'status-resolved';
-    return `<div class="conflict-card">
-      <div class="conflict-header">
-        <span class="conflict-status ${statusClass}">${c.status}</span>
-      </div>
-      ${c.explanation ? `<div class="conflict-explanation">${esc(c.explanation)}</div>` : ''}
-      <div class="conflict-facts">
-        <div class="conflict-fact"><div class="conflict-fact-label">Fact A · ${fa?esc(fa.scope):'unknown'}</div>${fa ? esc(fa.content) : 'Fact not found'}</div>
-        <div class="conflict-fact"><div class="conflict-fact-label">Fact B · ${fb?esc(fb.scope):'unknown'}</div>${fb ? esc(fb.content) : 'Fact not found'}</div>
-      </div>
-      <div class="conflict-date">Detected ${c.detected_at ? new Date(c.detected_at).toLocaleString() : ''}</div>
+    const isOpen = c.status === 'open';
+    const statusClass = isOpen ? 'status-open' : 'status-resolved';
+    const ts = c.detected_at ? new Date(c.detected_at).toLocaleString() : '';
+    const faTime = fa && fa.committed_at ? new Date(fa.committed_at).toLocaleString() : '';
+    const fbTime = fb && fb.committed_at ? new Date(fb.committed_at).toLocaleString() : '';
+    return `<div class="conflict-card${isOpen ? '' : ' resolved'}">
+      <div class="conflict-question">${c.explanation ? esc(c.explanation) : 'Conflicting information detected'}</div>
+      ${isOpen ? `<div class="conflict-actions">
+        <button class="btn-yes" onclick="resolveConflict('${c.id}','yes')">Yes, still true</button>
+        <button class="btn-no" onclick="resolveConflict('${c.id}','no')">No, it changed</button>
+      </div>` : `<div class="conflict-resolved-note">Resolved · ${c.resolution_type || 'dismissed'}</div>`}
+      <details class="conflict-details">
+        <summary>View details</summary>
+        <div class="conflict-facts">
+          <div class="conflict-fact"><div class="conflict-fact-label">${fa?esc(fa.scope):'?'} · ${faTime}</div>${fa ? esc(fa.content) : 'Fact not found'}</div>
+          <div class="conflict-fact"><div class="conflict-fact-label">${fb?esc(fb.scope):'?'} · ${fbTime}</div>${fb ? esc(fb.content) : 'Fact not found'}</div>
+        </div>
+        <div class="conflict-date">Detected ${ts}</div>
+      </details>
     </div>`;
   }).join('');
+}
+
+async function resolveConflict(conflictId, answer) {
+  if (!CURRENT_WS) return;
+  const resolution = answer === 'yes' ? 'Confirmed: original fact is still correct' : 'Updated: newer information supersedes';
+  try {
+    // Use the MCP endpoint to resolve
+    const r = await fetch('/mcp', {
+      method: 'POST', credentials: 'include',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: Date.now(), method: 'tools/call',
+        params: { name: 'engram_resolve', arguments: {
+          conflict_id: conflictId,
+          resolution_type: answer === 'yes' ? 'winner' : 'dismissed',
+          resolution: resolution,
+        }}
+      })
+    });
+    // Update local state
+    if (WS_DATA) {
+      const c = WS_DATA.conflicts.find(x => x.id === conflictId);
+      if (c) { c.status = 'resolved'; c.resolution_type = answer === 'yes' ? 'winner' : 'dismissed'; }
+    }
+    renderConflicts();
+    renderDetail();
+  } catch(e) { console.error('Resolve failed:', e); }
 }
 
 // ── Facts ────────────────────────────────────────────────────────────
@@ -1867,7 +1914,7 @@ function renderFacts() {
   if (!list.length) { el.innerHTML = '<div class="empty-state" style="padding:40px">No facts found</div>'; return; }
   el.innerHTML = list.map(f => {
     const ret = f.valid_until ? ' fact-retired' : '';
-    const dt = f.committed_at ? new Date(f.committed_at).toLocaleDateString() : '';
+    const dt = f.committed_at ? new Date(f.committed_at).toLocaleString() : '';
     return `<div class="fact-row${ret}">
       <div class="fact-content">${esc(f.content)}</div>
       <div><span class="fact-scope">${esc(f.scope||'general')}</span></div>
