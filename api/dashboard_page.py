@@ -2026,8 +2026,10 @@ function renderBilling(b) {
     <div class="billing-card">
       <h3>Plans</h3>
       <div class="plan-grid">
-        ${planDefs.map(p => `
-          <div class="plan-card ${p.key === plan ? 'plan-card-current' : ''}">
+        ${planDefs.map(p => {
+          const isDisabled = p.key !== 'free' && p.key !== plan;
+          return `
+          <div class="plan-card ${p.key === plan ? 'plan-card-current' : ''}" style="${isDisabled ? 'opacity:0.45;pointer-events:none;filter:grayscale(0.4)' : ''}">
             <div class="plan-card-name">${p.name}</div>
             <div class="plan-card-price">${p.price}<span>/mo</span></div>
             <div class="plan-card-commits">${p.commits} commits</div>
@@ -2036,10 +2038,14 @@ function renderBilling(b) {
             ${p.key === plan
               ? '<div class="plan-card-label">Current plan</div>'
               : p.key !== 'free'
-                ? `<button class="btn-sm btn-primary plan-upgrade-btn" onclick="startCheckout('${p.key}')">Upgrade</button>`
+                ? `<button class="btn-sm btn-primary plan-upgrade-btn" disabled style="opacity:0.5;cursor:not-allowed">Upgrade</button>`
                 : '<div class="plan-card-feature no" style="margin-top:auto;padding-top:8px">—</div>'}
-          </div>`).join('')}
+          </div>`;
+        }).join('')}
       </div>
+      <p class="pricing-note" style="margin-top:14px;padding:10px 14px;background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.15);border-radius:8px;color:rgba(251,191,36,0.8)">
+        ⏸ Paid plan upgrades are temporarily disabled while we are in testing and development. You'll be able to upgrade soon.
+      </p>
       ${b.overage_price_per_commit ? `<p class="pricing-note">Paid plans: overage billed at <strong>$${b.overage_price_per_commit}/commit</strong> above monthly limit.</p>` : ''}
     </div>
 
