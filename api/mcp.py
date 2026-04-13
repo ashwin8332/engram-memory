@@ -16,7 +16,6 @@ import hmac
 import json
 import logging
 import os
-import re
 import secrets
 import time
 import uuid
