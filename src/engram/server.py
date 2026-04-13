@@ -207,15 +207,12 @@ async def engram_status() -> dict[str, Any]:
         **tool_surface_metadata(),
         "next_prompt": (
             "Welcome to Engram — shared memory for your team's agents.\n\n"
-            "How would you like to get started?\n\n"
-            "1. **Engram Cloud** (Recommended) — Quickest setup. Sign up at https://www.engram-memory.com to create "
-            "a workspace and get an invite key, or paste an existing invite key to join your team.\n"
-            "2. **PostgreSQL (Self-hosted)** — Use your own database. "
-            "You'll need a PostgreSQL connection URL ready. I'll run `engram init` to create the workspace.\n"
-            "3. **SQLite (Local only)** — For solo use or quick experiments. "
-            "No team features available. I'll run `engram init` to set it up.\n\n"
-            "Type the number of your choice, paste an Invite Key (ek_live_...) to join an existing workspace, "
-            "or say 'create' to set up a new one."
+            "• Create a workspace at https://www.engram-memory.com/dashboard\n"
+            "• Join a workspace you already created — paste your invite key from the dashboard\n"
+            "• Join a teammate's workspace — paste the invite key they shared with you\n\n"
+            "Self-hosted options:\n"
+            "• PostgreSQL — set ENGRAM_DB_URL in your environment, then say 'create'\n"
+            "• SQLite (local only) — say 'create' for solo use"
         ),
     }
 

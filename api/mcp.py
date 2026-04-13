@@ -407,9 +407,9 @@ async def _tool_status(workspace_id: str | None, pool: Any) -> dict:
             "status": "unconfigured",
             "next_prompt": (
                 "Welcome to Engram — shared memory for your team's agents.\n\n"
-                "Do you have an invite key from a teammate, or are you creating a new workspace?\n\n"
-                "• If creating: I'll set one up now — just say 'create a new workspace'.\n"
-                "• If joining: paste your invite key and I'll connect you."
+                "• Create a workspace at https://www.engram-memory.com/dashboard\n"
+                "• Join a workspace you already created — paste your invite key from the dashboard\n"
+                "• Join a teammate's workspace — paste the invite key they shared with you"
             ),
         }
     async with pool.acquire() as conn:
