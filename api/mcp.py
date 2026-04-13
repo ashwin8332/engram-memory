@@ -155,46 +155,42 @@ CREATE TABLE IF NOT EXISTS user_workspaces (
 # ── DB pool ──────────────────────────────────────────────────────────
 
 # Bump this version whenever _SCHEMA_SQL changes (new tables, columns, indexes).
-# The bootstrap runs on every cold start AND re-runs if the version changes
-# on a warm instance (e.g. after a Vercel deployment reuses an existing worker).
 _SCHEMA_VERSION = 2
 _pool: Any = None
 _schema_version_applied: int = 0
 
 
+async def _ensure_schema(pool: Any) -> None:
+    """Ensure schema tables exist. Runs a cheap check on every request."""
+    global _schema_version_applied
+    if _schema_version_applied >= _SCHEMA_VERSION:
+        return
+    async with pool.acquire() as conn:
+        # Quick check: does the workspaces table exist?
+        exists = await conn.fetchval(
+            "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = $1 AND table_name = 'workspaces')",
+            SCHEMA,
+        )
+        if exists:
+            _schema_version_applied = _SCHEMA_VERSION
+            return
+        # Tables don't exist — run bootstrap
+        await conn.execute(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}")
+        for stmt in _SCHEMA_SQL.split(";"):
+            stmt = stmt.strip()
+            if stmt:
+                await conn.execute(f"SET search_path TO {SCHEMA}, public")
+                await conn.execute(stmt)
+        _schema_version_applied = _SCHEMA_VERSION
+
+
 async def _get_pool() -> Any:
-    global _pool, _schema_version_applied
+    global _pool
     if not DB_URL:
         raise RuntimeError("ENGRAM_DB_URL not configured")
 
     import asyncpg
-
-    if _schema_version_applied < _SCHEMA_VERSION:
-        conn = await asyncpg.connect(DB_URL)
-        try:
-            await conn.execute(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}")
-            # Prefix every statement with search_path to ensure it sticks
-            for stmt in _SCHEMA_SQL.split(";"):
-                stmt = stmt.strip()
-                if stmt:
-                    await conn.execute(f"SET search_path TO {SCHEMA}, public")
-                    await conn.execute(stmt)
-            # Verify critical tables exist
-            check = await conn.fetchval(
-                "SELECT COUNT(*) FROM information_schema.tables "
-                "WHERE table_schema = $1 AND table_name = 'workspaces'",
-                SCHEMA,
-            )
-            if not check:
-                raise RuntimeError(
-                    f"Schema bootstrap completed but workspaces table not found in schema '{SCHEMA}'"
-                )
-            _schema_version_applied = _SCHEMA_VERSION
-        except Exception as exc:
-            logger.error("Schema bootstrap failed: %s", exc)
-            raise
-        finally:
-            await conn.close()
 
     if _pool is None:
 
@@ -204,6 +200,8 @@ async def _get_pool() -> Any:
         _pool = await asyncpg.create_pool(
             DB_URL, min_size=1, max_size=5, command_timeout=30, init=_set_path
         )
+
+    await _ensure_schema(_pool)
     return _pool
 
 
