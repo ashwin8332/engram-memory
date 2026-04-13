@@ -468,6 +468,7 @@ class EngramEngine:
                 results.append({"success": False, "error": str(e)})
 
         return results
+
     # Adding helper function estimate_conflict_risk.
     def _estimate_conflict_risk(self, content: str, scope: str) -> str:
         """
