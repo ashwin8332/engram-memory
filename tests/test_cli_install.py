@@ -76,15 +76,16 @@ def test_install_writes_zed_context_server_url(tmp_path, monkeypatch):
 def test_install_writes_vscode_copilot_http_server(tmp_path, monkeypatch):
     runner = CliRunner()
     workspace_path = tmp_path / ".engram" / "workspace.json"
+    rebased = _rebased_mcp_clients(tmp_path)
 
     monkeypatch.setenv("ENGRAM_MCP_URL", "https://mcp.engram.app/mcp")
 
     with (
         patch("pathlib.Path.home", return_value=tmp_path),
         patch("engram.workspace.WORKSPACE_PATH", workspace_path),
-        patch("engram.cli._MCP_CLIENTS", _rebased_mcp_clients(tmp_path)),
+        patch("engram.cli._MCP_CLIENTS", rebased),
     ):
-        config_path = tmp_path / "Library" / "Application Support" / "Code" / "User" / "mcp.json"
+        config_path = rebased["VS Code (Copilot)"]["path"]
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text("{}")
 
