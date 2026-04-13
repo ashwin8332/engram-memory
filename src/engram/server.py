@@ -413,19 +413,28 @@ async def engram_join(invite_key: str) -> dict[str, Any]:
     schema = payload.get("schema", "engram")  # backward compatibility
     key_generation = payload.get("key_generation", 0)
 
-    # Atomically validate and consume the invite key in a single query
-    # to prevent TOCTOU race conditions with concurrent joins.
+    # Atomically validate and consume the invite key against the TARGET workspace database.
+    # Must use the db_url embedded in the key — not _storage (which points to the current
+    # workspace and may be a completely different database or None for new users).
     key_hash = invite_key_hash(invite_key)
-    if _storage is not None:
-        consumed = await _storage.consume_invite_key(key_hash)
-        if consumed is None:
-            return {
-                "status": "error",
-                "next_prompt": (
-                    "This invite key has been revoked or used up. "
-                    "Ask the workspace creator to generate a new one with engram_reset_invite_key."
-                ),
-            }
+    try:
+        from engram.postgres_storage import PostgresStorage
+
+        target_storage = PostgresStorage(db_url=db_url, workspace_id=engram_id, schema=schema)
+        await target_storage.connect()
+        consumed = await target_storage.consume_invite_key(key_hash)
+        await target_storage.close()
+    except Exception:
+        consumed = None
+
+    if consumed is None:
+        return {
+            "status": "error",
+            "next_prompt": (
+                "This invite key has been revoked, used up, or expired. "
+                "Ask the workspace creator to generate a new one with engram_reset_invite_key."
+            ),
+        }
 
     # Write workspace.json — db_url extracted silently, never shown to user
     config = WorkspaceConfig(
