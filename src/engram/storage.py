@@ -1995,7 +1995,8 @@ class SQLiteStorage(BaseStorage):
         counts["facts_updated"] = c.rowcount
 
         c = await self.db.execute(
-            "UPDATE conflicts SET explanation = '[redacted]', resolution = '[redacted]' "
+            "UPDATE conflicts SET explanation = '[redacted]', resolution = '[redacted]', "
+            "suggested_resolution = NULL, suggestion_reasoning = NULL "
             "WHERE workspace_id = ? AND (fact_a_id IN "
             "(SELECT id FROM facts WHERE agent_id = ? AND workspace_id = ?) "
             "OR fact_b_id IN "
