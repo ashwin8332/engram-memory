@@ -96,18 +96,23 @@ def _read_engram_env() -> str | None:
     return None
 
 
-def _write_engram_env(invite_key: str) -> None:
-    """Write .engram.env to the current working directory with the invite key."""
+def _write_engram_env(invite_key: str, server_url: str = "https://www.engram-memory.com") -> None:
+    """Write .engram.env to the current working directory with the invite key and server URL."""
     env_path = Path.cwd() / _ENGRAM_ENV_FILENAME
     content = (
         "# Engram — Shared Team Memory\n"
         "# This file allows all AI agents in this workspace to connect to\n"
         "# the team's shared Engram memory automatically.\n"
         "#\n"
-        "# DO NOT DELETE — without this file, agents lose access to shared memory\n"
-        "# and must be given the invite key again each session.\n"
+        "# MCP agents (Claude Code, Cursor, Windsurf): engram_status() reads this\n"
+        "# file and auto-joins the workspace at session start.\n"
         "#\n"
+        "# Non-MCP agents: use ENGRAM_SERVER_URL + ENGRAM_INVITE_KEY directly\n"
+        "# via the REST API (see AGENTS.md for instructions).\n"
+        "#\n"
+        "# DO NOT DELETE — without this file, agents lose access to shared memory.\n"
         "# Add .engram.env to your .gitignore — it contains credentials.\n"
+        f"ENGRAM_SERVER_URL={server_url}\n"
         f"ENGRAM_INVITE_KEY={invite_key}\n"
     )
     env_path.write_text(content)
@@ -135,8 +140,16 @@ async def _join_workspace(invite_key: str) -> dict[str, Any]:
             ),
         }
 
-    db_url = payload["db_url"]
-    engram_id = payload["engram_id"]
+    db_url = payload.get("db_url", "")
+    engram_id = payload.get("engram_id", "")
+    if not db_url or not engram_id:
+        return {
+            "status": "error",
+            "next_prompt": (
+                "This invite key does not contain embedded database credentials. "
+                "It may be a cloud-issued key — connect via the Engram dashboard instead."
+            ),
+        }
     schema = payload.get("schema", "engram")
     key_generation = payload.get("key_generation", 0)
 
@@ -257,10 +270,13 @@ async def engram_status() -> dict[str, Any]:
     ws = read_workspace()
 
     if env_key and not (ws and (ws.db_url or WORKSPACE_PATH.exists())):
-        result = await _join_workspace(env_key)
-        if result["status"] == "joined":
-            ws = read_workspace()  # reload after join
-        # Fall through to the ready check below; on error, continue to unconfigured
+        try:
+            result = await _join_workspace(env_key)
+            if result["status"] == "joined":
+                ws = read_workspace()  # reload after join
+            # On error status, fall through to unconfigured
+        except Exception as exc:
+            logger.warning("Auto-join from .engram.env failed: %s", exc)
 
     # Reload ws after potential auto-join
     if ws is None:

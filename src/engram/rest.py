@@ -152,6 +152,27 @@ def build_rest_routes(
     def _error(msg: str, status: int = 400) -> JSONResponse:
         return JSONResponse({"error": msg, "status": status}, status_code=status)
 
+    async def _check_invite_key_auth(request: Request) -> bool:
+        """Return True if the request carries a valid invite key as Bearer token.
+
+        Accepts: Authorization: Bearer ek_live_...
+        Validates against the workspace's invite_keys table (does NOT consume a use).
+        Falls through (returns False) when no invite key is present, allowing the
+        caller to apply its own auth logic.
+        """
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer ek_live_"):
+            return False
+        raw_key = auth_header[len("Bearer ") :]
+        try:
+            from engram.workspace import invite_key_hash
+
+            key_hash = invite_key_hash(raw_key)
+        except Exception:
+            return False
+        row = await storage.validate_invite_key(key_hash)
+        return row is not None
+
     async def api_commit(request: Request) -> JSONResponse:
         try:
             body = await request.json()
@@ -200,8 +221,10 @@ def build_rest_routes(
                     status=429,
                 )
 
-        # Scope permission check
-        if auth_enabled and agent_id:
+        # Scope permission check — skipped when a valid invite key is present
+        # (the key proves workspace membership, granting global write access)
+        invite_key_valid = await _check_invite_key_auth(request)
+        if auth_enabled and agent_id and not invite_key_valid:
             from engram.auth import check_scope_permission
 
             allowed = await check_scope_permission(storage, agent_id, scope, "write")
@@ -266,8 +289,9 @@ def build_rest_routes(
                     "'as_of' must be a valid ISO 8601 datetime string (e.g. '2024-01-01T00:00:00Z')."
                 )
 
-        # Scope read permission check
-        if auth_enabled and agent_id and scope:
+        # Scope read permission check — skipped when a valid invite key is present
+        invite_key_valid = await _check_invite_key_auth(request)
+        if auth_enabled and agent_id and scope and not invite_key_valid:
             from engram.auth import check_scope_permission
 
             allowed = await check_scope_permission(storage, agent_id, scope, "read")
