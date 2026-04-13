@@ -160,18 +160,22 @@ source .engram.env && curl -s "$ENGRAM_SERVER_URL/api/query?topic=<task>" \\
 # in every session without the user having to include it per-project.
 _KIRO_STEERING_INSTRUCTIONS = "---\ninclusion: always\n---\n\n" + _ENGRAM_AGENT_INSTRUCTIONS
 
-# ── Claude Code UserPromptSubmit hook ────────────────────────────────
-# This hook fires at the SHELL level for every user message — before the LLM
-# processes it. It auto-commits the raw user message to Engram via the REST
-# API, regardless of whether the LLM remembers to call engram_commit.
+# ── Universal auto-commit hook script ────────────────────────────────
+# One Python script handles all IDEs. Each IDE passes the user prompt
+# differently via JSON on stdin — we try all known field paths:
+#
+#   Claude Code  → {"prompt": "..."}
+#   Cursor       → {"prompt": "..."}
+#   Windsurf     → {"tool_info": {"user_prompt": "..."}}
 #
 # Credentials are read from ~/.engram/credentials (written by engram join/init)
 # and from the project's .engram.env (for project-specific overrides).
 
 _HOOK_SCRIPT = '''\
 #!/usr/bin/env python3
-"""Engram auto-commit hook — fires on every Claude Code UserPromptSubmit event.
+"""Engram auto-commit hook — fires on every user message across all IDEs.
 
+Handles Claude Code, Cursor, and Windsurf JSON formats.
 Reads credentials from ~/.engram/credentials and the project .engram.env,
 then POSTs the user prompt to the Engram REST API. Never blocks or raises.
 """
@@ -182,7 +186,14 @@ import urllib.request
 
 try:
     data = json.load(sys.stdin)
-    prompt = data.get("prompt", "").strip()
+
+    # Extract prompt from whichever IDE format is present
+    prompt = (
+        data.get("prompt")                                    # Claude Code, Cursor
+        or data.get("tool_info", {}).get("user_prompt")      # Windsurf
+        or ""
+    ).strip()
+
     if not prompt:
         sys.exit(0)
 
@@ -230,7 +241,7 @@ try:
     )
     urllib.request.urlopen(req, timeout=3)
 except Exception:
-    pass  # Never block the user's message
+    pass  # Never block the user\'s message
 
 sys.exit(0)
 '''
@@ -285,6 +296,92 @@ def _write_claude_code_hook(dry_run: bool) -> bool:
     return True
 
 
+def _write_windsurf_hook(dry_run: bool) -> bool:
+    """Write the Engram pre_user_prompt hook to ~/.codeium/windsurf/hooks.json.
+
+    Windsurf passes the prompt as JSON on stdin: {"tool_info": {"user_prompt": "..."}}
+    Returns True if written (or would be in dry-run mode).
+    """
+    hook_script = Path.home() / ".engram" / "hooks" / "auto_commit.py"
+    hooks_path = Path.home() / ".codeium" / "windsurf" / "hooks.json"
+
+    if dry_run:
+        click.echo(f"[dry-run] Would write Windsurf hook to {hooks_path}")
+        return True
+
+    if not hooks_path.parent.exists():
+        return False  # Windsurf not installed
+
+    try:
+        # Ensure the hook script exists
+        hook_script.parent.mkdir(parents=True, exist_ok=True)
+        hook_script.write_text(_HOOK_SCRIPT)
+        hook_script.chmod(0o755)
+
+        if hooks_path.exists():
+            try:
+                config = json.loads(hooks_path.read_text())
+            except Exception:
+                config = {}
+        else:
+            config = {}
+
+        hooks = config.setdefault("hooks", {})
+        pre_prompt = hooks.setdefault("pre_user_prompt", [])
+
+        hook_command = f"python3 {hook_script}"
+        if not any(h.get("command") == hook_command for h in pre_prompt):
+            pre_prompt.append({"command": hook_command, "show_output": False})
+
+        hooks_path.write_text(json.dumps(config, indent=2))
+        return True
+    except Exception:
+        return False
+
+
+def _write_cursor_hook(dry_run: bool) -> bool:
+    """Write the Engram beforeSubmitPrompt hook to ~/.cursor/hooks.json.
+
+    Cursor passes the prompt as JSON on stdin: {"prompt": "..."}
+    Returns True if written (or would be in dry-run mode).
+    """
+    hook_script = Path.home() / ".engram" / "hooks" / "auto_commit.py"
+    hooks_path = Path.home() / ".cursor" / "hooks.json"
+
+    if dry_run:
+        click.echo(f"[dry-run] Would write Cursor hook to {hooks_path}")
+        return True
+
+    if not hooks_path.parent.exists():
+        return False  # Cursor not installed
+
+    try:
+        # Ensure the hook script exists
+        hook_script.parent.mkdir(parents=True, exist_ok=True)
+        hook_script.write_text(_HOOK_SCRIPT)
+        hook_script.chmod(0o755)
+
+        if hooks_path.exists():
+            try:
+                config = json.loads(hooks_path.read_text())
+            except Exception:
+                config = {"version": 1}
+        else:
+            config = {"version": 1}
+
+        hooks = config.setdefault("hooks", {})
+        before_prompt = hooks.setdefault("beforeSubmitPrompt", [])
+
+        hook_command = f"python3 {hook_script}"
+        if not any(h.get("command") == hook_command for h in before_prompt):
+            before_prompt.append({"command": hook_command})
+
+        hooks_path.write_text(json.dumps(config, indent=2))
+        return True
+    except Exception:
+        return False
+
+
 # ── Kiro promptSubmit hook ────────────────────────────────────────────
 # This hook fires at the IDE level for every user message — before the LLM
 # processes it. It auto-commits the raw user message to Engram via the REST
@@ -300,16 +397,12 @@ _KIRO_HOOK = {
     },
     "then": {
         "type": "runCommand",
+        # Kiro exposes $USER_PROMPT as an env var; we wrap it in a tiny JSON
+        # payload and pipe it to the shared hook script so credentials are
+        # read from ~/.engram/credentials / .engram.env just like other IDEs.
         "command": (
-            "source .engram.env 2>/dev/null || true; "
-            "INVITE_KEY=\"${ENGRAM_INVITE_KEY}\"; "
-            "SERVER=\"${ENGRAM_SERVER_URL:-https://www.engram-memory.com}\"; "
-            "PROMPT_ESCAPED=$(echo \"${USER_PROMPT}\" | python3 -c \"import json,sys; print(json.dumps(sys.stdin.read().strip()))\"); "
-            "curl -s -X POST \"$SERVER/api/commit\" "
-            "-H \"Authorization: Bearer $INVITE_KEY\" "
-            "-H \"Content-Type: application/json\" "
-            "-d \"{\\\"content\\\": $PROMPT_ESCAPED, \\\"scope\\\": \\\"general\\\", \\\"confidence\\\": 0.8, \\\"fact_type\\\": \\\"observation\\\"}\" "
-            "> /dev/null 2>&1 || true"
+            "echo \"{\\\"prompt\\\": \\\"$(echo $USER_PROMPT | sed s/\\\"/\\\\\\\\\\\"/g)\\\"}\""
+            " | python3 ~/.engram/hooks/auto_commit.py"
         ),
     },
 }
@@ -318,8 +411,10 @@ _KIRO_HOOK = {
 def _write_kiro_hook(project_dir: Path, dry_run: bool) -> bool:
     """Write the Engram promptSubmit hook to .kiro/hooks/ in the project directory.
 
+    Also ensures the shared hook script exists at ~/.engram/hooks/auto_commit.py.
     Returns True if the hook was written (or would be in dry-run mode).
     """
+    hook_script = Path.home() / ".engram" / "hooks" / "auto_commit.py"
     hooks_dir = project_dir / ".kiro" / "hooks"
     hook_path = hooks_dir / "engram-autocommit.json"
 
@@ -328,6 +423,11 @@ def _write_kiro_hook(project_dir: Path, dry_run: bool) -> bool:
         return True
 
     try:
+        # Ensure the shared hook script exists
+        hook_script.parent.mkdir(parents=True, exist_ok=True)
+        hook_script.write_text(_HOOK_SCRIPT)
+        hook_script.chmod(0o755)
+
         hooks_dir.mkdir(parents=True, exist_ok=True)
         hook_path.write_text(json.dumps(_KIRO_HOOK, indent=2) + "\n")
         return True
@@ -491,6 +591,10 @@ def install(dry_run: bool) -> None:
     # at the shell level, independent of what the LLM does)
     hook_written = _write_claude_code_hook(dry_run)
 
+    # Write Windsurf and Cursor hooks (same shared script, different config files)
+    windsurf_hook_written = _write_windsurf_hook(dry_run)
+    cursor_hook_written = _write_cursor_hook(dry_run)
+
     # Write the Kiro promptSubmit hook to the current project directory
     kiro_hook_written = _write_kiro_hook(Path.cwd(), dry_run)
 
@@ -502,6 +606,10 @@ def install(dry_run: bool) -> None:
         click.echo(f"📝 Agent instructions written to: {', '.join(steering_written)}")
     if hook_written:
         click.echo("⚡ Auto-commit hook installed: every Claude Code message → Engram")
+    if windsurf_hook_written:
+        click.echo("⚡ Auto-commit hook installed: every Windsurf message → Engram")
+    if cursor_hook_written:
+        click.echo("⚡ Auto-commit hook installed: every Cursor message → Engram")
     if kiro_hook_written:
         click.echo("⚡ Auto-commit hook installed: every Kiro message → Engram")
 

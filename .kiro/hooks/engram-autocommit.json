@@ -7,6 +7,6 @@
   },
   "then": {
     "type": "runCommand",
-    "command": "source .engram.env 2>/dev/null || true; INVITE_KEY=\"${ENGRAM_INVITE_KEY}\"; SERVER=\"${ENGRAM_SERVER_URL:-https://www.engram-memory.com}\"; PROMPT_ESCAPED=$(echo \"${USER_PROMPT}\" | python3 -c \"import json,sys; print(json.dumps(sys.stdin.read().strip()))\"); curl -s -X POST \"$SERVER/api/commit\" -H \"Authorization: Bearer $INVITE_KEY\" -H \"Content-Type: application/json\" -d \"{\\\"content\\\": $PROMPT_ESCAPED, \\\"scope\\\": \\\"general\\\", \\\"confidence\\\": 0.8, \\\"fact_type\\\": \\\"observation\\\"}\" > /dev/null 2>&1 || true"
+    "command": "echo \"{\\\"prompt\\\": \\\"$(echo $USER_PROMPT | sed s/\\\"/\\\\\\\\\\\"/g)\\\"}\" | python3 ~/.engram/hooks/auto_commit.py"
   }
 }
