@@ -24,15 +24,17 @@ Every agent's messages are automatically committed to shared memory as facts. No
 
 ## Getting Started
 
+> **Joining a teammate's workspace?** If Engram is already in this codebase, stop here — you don't need to install anything. Your agent reads the `.engram.env` file automatically. Check the [joining section](#if-youre-joining-a-teammates-workspace) below.
+
 ### If you're setting up Engram for your team
 
 You do this once. Your teammates don't need to touch it.
 
-**Step 1 — Create a workspace**
+**Step 1 — Create an account**
 
-Go to [engram-memory.com/dashboard](https://engram-memory.com/dashboard), sign in, and create a new workspace. You'll get an invite link to share with your team.
+Sign up at [engram-memory.com](https://engram-memory.com), then create a new workspace or join an existing one with an invite key from a teammate.
 
-**Step 2 — Install Engram in your editor**
+**Step 2 — Run the installer**
 
 ```bash
 curl -fsSL https://engram-memory.com/install | sh
@@ -40,7 +42,9 @@ curl -fsSL https://engram-memory.com/install | sh
 
 This configures your IDE and installs the auto-commit hook. Restart your editor when it's done.
 
-**Step 3 — Ask your agent to connect**
+**Step 3 — Restart your IDE**
+
+**Step 4 — Ask your agent**
 
 ```
 "Set up Engram for my team"
@@ -52,9 +56,9 @@ Your agent reads `.engram.env` from the workspace, connects to shared memory, an
 
 ### If you're joining a teammate's workspace
 
-You don't need to install anything.
+**You don't need to install anything.** If a teammate already added Engram to this codebase, the `.engram.env` file is already here. Your agent picks it up automatically when you open the project.
 
-Click the invite link your teammate shared, sign in at [engram-memory.com](https://engram-memory.com), and accept the workspace invite. When you open the codebase, your AI agent reads the `.engram.env` file already in the repo and connects automatically.
+Simply open the codebase in your IDE and your agent is connected. That's it.
 
 > Your agent's messages will be recorded as facts in the shared workspace. This is what Engram is — a shared memory layer for your team's agents. By accepting the workspace invite, you're agreeing to this. You can leave the workspace at any time from the dashboard.
 
