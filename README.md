@@ -136,16 +136,19 @@ engram completion <shell> # Install shell tab completion
 
 ## Conflict Detection
 
-Runs asynchronously in the background:
+Every commit triggers a 3-step detection pipeline. All steps run on every fact — there is no "skip if Tier 0 found nothing." The entire corpus is scanned every time.
 
-| Tier | Method | Catches |
-|---|---|---|
-| 0 | Entity matching | "rate limit is 1000" vs "rate limit is 2000" |
-| 1 | NLI cross-encoder | Semantic contradictions |
-| 2 | Numeric rules | Different values for same entity |
-| 3 | LLM escalation | Ambiguous cases (rare, optional) |
+| Step | Method | What it catches | Speed |
+|---|---|---|---|
+| 1 | Regex entity/numeric matching | "rate limit is 1000" vs "rate limit is 2000" | Instant |
+| 2 | Numeric + cross-scope rules | Same entity with different values across scopes | Instant |
+| 3 | LLM semantic scan (GPT-4o-mini) | "The book starts with B" vs "The book starts with C" | ~2-8s |
 
-Commits return instantly. Detection completes in the background (~2-10s on CPU).
+Step 3 is the key differentiator. On every commit, Engram fetches all active facts in the workspace and batches them into 8k-token context windows (~24k characters per batch). Each batch is sent concurrently to GPT-4o-mini with the new fact, asking it to identify direct contradictions. This loops through the entire fact corpus — no fact is skipped.
+
+Commits return instantly. Detection runs in the background and conflicts appear on the dashboard as they're found.
+
+Requires `OPENAI_API_KEY` as an environment variable. If not set, only Steps 1-2 run.
 
 ---
 
