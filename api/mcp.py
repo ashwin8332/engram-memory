@@ -36,6 +36,22 @@ SCHEMA = "engram"
 # Billing
 HOBBY_LIMIT_BYTES = 512 * 1024 * 1024  # 512 MiB — same as Neon's free tier
 
+# ── Terms of Service ─────────────────────────────────────────────────
+
+ENGRAM_TERMS = (
+    "By using Engram, you agree to the following terms:\n\n"
+    "1. AUTO-COMMIT: All conversation data between you and your AI agent is\n"
+    "   automatically recorded in your team's shared Engram memory.\n\n"
+    "2. YOUR DATA IS YOURS: Engram will never sell, read, redistribute, or\n"
+    "   use your conversation data for any purpose beyond providing the\n"
+    "   Engram service to you and your team.\n\n"
+    "3. ENCRYPTION: All data is encrypted in transit (TLS) and at rest.\n"
+    "   Only authenticated members of your workspace can access your data.\n\n"
+    "4. DELETION: You can delete your data at any time using the Engram\n"
+    "   dashboard or GDPR erasure tools.\n\n"
+    "Do you accept these terms? Reply 'I accept' to continue."
+)
+
 # ── Schema SQL ───────────────────────────────────────────────────────
 
 _SCHEMA_SQL = """
@@ -114,6 +130,7 @@ ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS paused         BOOLEAN NOT NULL 
 ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS storage_bytes  BIGINT  NOT NULL DEFAULT 0;
 ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS plan           TEXT    NOT NULL DEFAULT 'hobby';
 ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;
+ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS terms_accepted BOOLEAN NOT NULL DEFAULT false;
 
 -- User accounts (managed by api/auth.py but schema lives here so it runs on first MCP call)
 CREATE TABLE IF NOT EXISTS users (
@@ -360,23 +377,42 @@ async def _tool_status(workspace_id: str | None, pool: Any) -> dict:
         }
     async with pool.acquire() as conn:
         ws = await conn.fetchrow(
-            "SELECT engram_id, anonymous_mode, key_generation FROM workspaces WHERE engram_id = $1",
+            "SELECT engram_id, anonymous_mode, key_generation, terms_accepted FROM workspaces WHERE engram_id = $1",
             workspace_id,
         )
     if not ws:
         return {"status": "error", "message": "Workspace not found"}
-    return {
-        "status": "ready",
-        "mode": "hosted",
-        "engram_id": ws["engram_id"],
-        "anonymous_mode": ws["anonymous_mode"],
-        "next_prompt": (
-            "Engram is connected and ready.\n\n"
-            "Auto-commit mode is active: call engram_commit with the user's "
-            "message as content after every user prompt, before responding. "
-            "This records every conversation turn as a fact in shared team memory."
-        ),
-    }
+
+    terms_accepted = ws["terms_accepted"]
+    if terms_accepted:
+        return {
+            "status": "ready",
+            "mode": "hosted",
+            "engram_id": ws["engram_id"],
+            "anonymous_mode": ws["anonymous_mode"],
+            "terms_accepted": True,
+            "next_prompt": (
+                "Engram is connected and ready.\n\n"
+                "Auto-commit mode is active (terms accepted). Call engram_commit with\n"
+                "the user's message as content after every user prompt, before responding.\n"
+                "This records every conversation turn as a fact in shared team memory."
+            ),
+        }
+    else:
+        return {
+            "status": "ready",
+            "mode": "hosted",
+            "engram_id": ws["engram_id"],
+            "anonymous_mode": ws["anonymous_mode"],
+            "terms_accepted": False,
+            "next_prompt": (
+                "Engram is connected but the terms of service have not been accepted yet.\n\n"
+                "Present the following terms to the user:\n\n"
+                f"{ENGRAM_TERMS}\n\n"
+                "When the user accepts, call engram_accept_terms to record consent\n"
+                "and activate auto-commit mode."
+            ),
+        }
 
 
 async def _tool_init(pool: Any, anonymous_mode: bool = False, anon_agents: bool = False) -> dict:
@@ -426,9 +462,11 @@ async def _tool_init(pool: Any, anonymous_mode: bool = False, anon_agents: bool 
             f"To invite teammates, share the invite key above. They run:\n"
             f"  curl -fsSL https://engram-memory.com/install | sh\n"
             f"and paste the invite key when prompted.\n\n"
-            f"Auto-commit mode is now active: call engram_commit with the user's\n"
-            f"message as content after every user prompt, before responding.\n"
-            f"This records every conversation turn as a fact in shared team memory.\n\n"
+            f"Before auto-commit can be activated, the user must accept the Engram\n"
+            f"terms of service. Present the following terms to the user now:\n\n"
+            f"{ENGRAM_TERMS}\n\n"
+            f"When the user says 'I accept' (or similar affirmative), call\n"
+            f"engram_accept_terms with their invite_key to record consent.\n\n"
             f"Dashboard: https://www.engram-memory.com/dashboard\n"
             f"Workspace ID: {engram_id}\n\n"
             f"Should commits show who made them, or stay anonymous?"
@@ -482,9 +520,11 @@ async def _tool_join(invite_key: str, pool: Any) -> dict:
             f'  Add: "headers": {{"Authorization": "Bearer {invite_key}"}}\n\n'
             f"After the config is saved, the user should restart their IDE so future\n"
             f"sessions authenticate automatically via the header.\n\n"
-            f"Auto-commit mode is now active: call engram_commit with the user's\n"
-            f"message as content after every user prompt, before responding.\n"
-            f"This records every conversation turn as a fact in shared team memory.\n\n"
+            f"Before auto-commit can be activated, the user must accept the Engram\n"
+            f"terms of service. Present the following terms to the user now:\n\n"
+            f"{ENGRAM_TERMS}\n\n"
+            f"When the user says 'I accept' (or similar affirmative), call\n"
+            f"engram_accept_terms with their invite_key to record consent.\n\n"
             f"Dashboard: https://www.engram-memory.com/dashboard\n"
             f"Workspace ID: {engram_id}"
         ),
@@ -785,6 +825,26 @@ async def _tool_reset_invite_key(workspace_id: str, pool: Any) -> dict:
     }
 
 
+async def _tool_accept_terms(workspace_id: str, pool: Any) -> dict:
+    """Record that the user has accepted the Engram terms of service."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE workspaces SET terms_accepted = true WHERE engram_id = $1",
+            workspace_id,
+        )
+    return {
+        "status": "accepted",
+        "next_prompt": (
+            "Terms accepted. Thank you!\n\n"
+            "Auto-commit mode is now active. All conversation data will be\n"
+            "automatically recorded in your team's shared Engram memory.\n\n"
+            "From now on, call engram_commit with the user's message as content\n"
+            "after every user prompt, before responding. This records every\n"
+            "conversation turn as a fact in shared team memory."
+        ),
+    }
+
+
 # ── MCP tool definitions (JSON Schema) ──────────────────────────────
 
 _TOOLS = [
@@ -793,8 +853,9 @@ _TOOLS = [
         "description": (
             "Check whether Engram is configured. Call this FIRST in every new session. "
             "Read the 'next_prompt' field and follow its instructions. "
-            "When status is 'ready', auto-commit mode is active: call engram_commit "
-            "with the user's message as content after every user prompt, before responding."
+            "When status is 'ready' and terms_accepted is true, auto-commit mode is active: "
+            "call engram_commit with the user's message as content after every user prompt, "
+            "before responding."
         ),
         "inputSchema": {
             "type": "object",
@@ -846,8 +907,8 @@ _TOOLS = [
         "name": "engram_commit",
         "description": (
             "Record a fact to shared team memory. "
-            "Auto-commit: call this with the user's message as content after every user prompt, "
-            "before responding. This records every conversation turn as a fact."
+            "When terms are accepted and auto-commit is active, call this with the user's "
+            "message as content after every user prompt, before responding."
         ),
         "inputSchema": {
             "type": "object",
@@ -946,6 +1007,25 @@ _TOOLS = [
         ),
         "inputSchema": {"type": "object", "properties": {}, "required": []},
     },
+    {
+        "name": "engram_accept_terms",
+        "description": (
+            "Record that the user has accepted the Engram terms of service. "
+            "Call this after the user explicitly says 'I accept' or similar affirmative "
+            "in response to the terms presented after init or join. "
+            "This activates auto-commit mode for the workspace."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "invite_key": {
+                    "type": "string",
+                    "description": "Your invite key (ek_live_...) for auth if not in headers",
+                }
+            },
+            "required": [],
+        },
+    },
 ]
 
 _SERVER_INFO = {
@@ -956,11 +1036,11 @@ _SERVER_INFO = {
         "Engram is a shared team memory layer with conflict detection. "
         "ALWAYS call engram_status() first in every new session. "
         "Read the 'next_prompt' field and follow its instructions. "
-        "Once status is 'ready': call engram_query before starting any task, "
-        "check engram_conflicts before architectural decisions. "
-        "Auto-commit mode: after every user message, call engram_commit with "
-        "the user's message as the content field before responding to the user. "
-        "This records every conversation turn as a fact in shared team memory."
+        "Once status is 'ready' and terms_accepted is true: call engram_query "
+        "before starting any task, check engram_conflicts before architectural "
+        "decisions. Auto-commit mode (when terms are accepted): after every user "
+        "message, call engram_commit with the user's message as the content field "
+        "before responding. This records every conversation turn as a fact."
     ),
 }
 
@@ -1075,6 +1155,8 @@ async def _handle_message(msg: dict, workspace_id: str | None) -> dict | None:
                     )
                 elif tool_name == "engram_reset_invite_key":
                     result = await _tool_reset_invite_key(workspace_id, pool)
+                elif tool_name == "engram_accept_terms":
+                    result = await _tool_accept_terms(workspace_id, pool)
                 else:
                     return _err(msg_id, -32601, f"Unknown tool: {tool_name}")
 

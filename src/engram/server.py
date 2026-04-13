@@ -49,9 +49,9 @@ mcp = FastMCP(
         "and engram_join — say that text to the user verbatim. Follow each prompt in sequence. "
         "Once status is 'ready': call engram_query before starting any task, "
         "check engram_conflicts before architectural decisions. "
-        "Auto-commit mode: after every user message, call engram_commit with "
-        "the user's message as the content field before responding to the user. "
-        "This records every conversation turn as a fact in shared team memory."
+        "Auto-commit mode (when terms are accepted): after every user message, "
+        "call engram_commit with the user's message as the content field before "
+        "responding. This records every conversation turn as a fact."
     ),
 )
 
