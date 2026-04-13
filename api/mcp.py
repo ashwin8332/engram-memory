@@ -159,18 +159,28 @@ async def _get_pool() -> Any:
     global _pool, _schema_ready
     if not DB_URL:
         raise RuntimeError("ENGRAM_DB_URL not configured")
-    if _pool is None:
-        import asyncpg
 
+    import asyncpg
+
+    if not _schema_ready:
         # Bootstrap: create schema + tables with a single connection
         conn = await asyncpg.connect(DB_URL)
         try:
             await conn.execute(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}")
             await conn.execute(f"SET search_path TO {SCHEMA}, public")
-            await conn.execute(_SCHEMA_SQL)
+            # Execute each statement individually for compatibility
+            for stmt in _SCHEMA_SQL.split(";"):
+                stmt = stmt.strip()
+                if stmt:
+                    await conn.execute(stmt)
             _schema_ready = True
+        except Exception as exc:
+            logger.error("Schema bootstrap failed: %s", exc)
+            raise
         finally:
             await conn.close()
+
+    if _pool is None:
 
         async def _set_path(c: Any) -> None:
             await c.execute(f"SET search_path TO {SCHEMA}, public")
