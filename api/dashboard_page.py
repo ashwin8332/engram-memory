@@ -1683,9 +1683,7 @@ function renderBilling(b) {
       <div class="usage-bar-lg"><div class="usage-fill-lg ${fillClass}" style="width:${Math.min(100,pct)}%"></div></div>
       <div style="font-size:13px;color:var(--tm)">${pct.toFixed(1)}% of free tier used</div>
       <p class="pricing-note">
-        Free tier: <strong>512 MB</strong> (same as Neon's hobby plan)<br>
-        Paid tier: <strong>$${b.price_per_gib_month}/GiB-month</strong>
-        — 20% above Neon's rate, with identical free tier limits.
+        Free tier: <strong>512 MB</strong> &nbsp;·&nbsp; Paid tier: <strong>$${b.price_per_gib_month}/GiB-month</strong>
       </p>
     </div>
 
