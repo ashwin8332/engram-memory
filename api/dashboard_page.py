@@ -273,9 +273,15 @@ def _render_dashboard() -> str:
     .ws-card.paused { border-color: rgba(239,68,68,0.3); }
     .ws-name { font-size: 16px; font-weight: 700; color: var(--t1); margin-bottom: 4px;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .ws-name-placeholder { font-size: 13px; color: var(--tm); font-style: italic; margin-bottom: 4px; }
     .ws-id { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 500;
       color: var(--tm); margin-bottom: 12px; }
+    .ws-id-main { font-family: 'JetBrains Mono', monospace; font-size: 15px; font-weight: 600;
+      color: var(--em4); margin-bottom: 12px; }
+    .ws-rename-btn { padding: 5px 12px; border-radius: 7px; font-size: 12px; font-weight: 600;
+      background: rgba(255,255,255,0.04); border: 1px solid var(--border); color: var(--t2);
+      cursor: pointer; font-family: inherit; transition: background 0.2s, color 0.2s; }
+    .ws-rename-btn:hover { background: rgba(99,102,241,0.12); border-color: rgba(99,102,241,0.3);
+      color: #818cf8; }
     .ws-badges { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
     .badge { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
       padding: 3px 10px; border-radius: 6px; }
@@ -333,8 +339,8 @@ def _render_dashboard() -> str:
 
     /* Workspace list action buttons */
     .ws-list-actions { display: flex; gap: 10px; }
-    .ws-card-footer { display: flex; justify-content: flex-end; margin-top: 14px; padding-top: 12px;
-      border-top: 1px solid var(--border); }
+    .ws-card-footer { display: flex; justify-content: space-between; align-items: center;
+      margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
     .ws-key-btn { padding: 6px 14px; border-radius: 7px; font-size: 12px; font-weight: 600;
       background: rgba(52,211,153,0.07); border: 1px solid rgba(52,211,153,0.15); color: var(--em4);
       cursor: pointer; font-family: inherit; transition: background 0.2s; }
@@ -352,10 +358,10 @@ def _render_dashboard() -> str:
       color: var(--tm); margin-top: 2px; }
     .detail-ws-name { font-size: 18px; font-weight: 700; color: var(--t1); line-height: 1.2; }
     .detail-name-wrap { display: flex; flex-direction: column; gap: 2px; }
-    .rename-btn { background: none; border: none; color: var(--tm); cursor: pointer;
-      font-size: 14px; padding: 4px 6px; border-radius: 6px; transition: background 0.15s, color 0.15s;
-      line-height: 1; }
-    .rename-btn:hover { background: rgba(255,255,255,0.06); color: var(--em4); }
+    .rename-btn { background: rgba(255,255,255,0.04); border: 1px solid var(--border); color: var(--t2);
+      cursor: pointer; font-size: 12px; font-weight: 600; font-family: inherit;
+      padding: 4px 10px; border-radius: 6px; transition: background 0.15s, color 0.15s; line-height: 1; }
+    .rename-btn:hover { background: rgba(99,102,241,0.12); border-color: rgba(99,102,241,0.3); color: #818cf8; }
     .rename-form { display: none; align-items: center; gap: 8px; flex-wrap: wrap; }
     .rename-form.visible { display: flex; }
     .rename-input { background: var(--bg-card); border: 1px solid var(--border-glow); border-radius: 8px;
@@ -723,7 +729,7 @@ def _render_dashboard() -> str:
       <div class="detail-name-wrap">
         <div style="display:flex;align-items:center;gap:6px">
           <span class="detail-ws-name" id="detail-ws-name"></span>
-          <button class="rename-btn" id="rename-btn" title="Rename workspace" onclick="startRename()">✏</button>
+          <button class="rename-btn" id="rename-btn" onclick="startRename()">Rename</button>
         </div>
         <span class="detail-ws-id" id="detail-ws-id"></span>
         <div class="rename-form" id="rename-form">
@@ -835,7 +841,16 @@ def _render_dashboard() -> str:
   <div class="modal">
     <div id="create-step-pin">
       <h3>Create a workspace</h3>
-      <p class="subtitle">Set a 4-digit PIN to protect your invite key. You'll need it to view the key again later.</p>
+      <p class="subtitle">Give your workspace a name, then set a PIN to protect your invite key.</p>
+      <div class="field" style="margin-bottom:20px">
+        <label style="font-size:13px;font-weight:600;color:var(--t2);display:block;margin-bottom:8px">Workspace name</label>
+        <input id="create-ws-name" type="text" maxlength="80" placeholder="e.g. My Team's Workspace"
+          autocomplete="off"
+          style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(52,211,153,0.15);
+                 border-radius:10px;color:var(--t1);font-size:15px;font-family:inherit;padding:10px 14px;outline:none;
+                 transition:border-color 0.2s;" />
+      </div>
+      <p class="subtitle" style="margin-bottom:4px">Set a 4-digit PIN to protect your invite key</p>
       <div class="pin-row">
         <input class="pin-digit" id="cp0" type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]" />
         <input class="pin-digit" id="cp1" type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]" />
@@ -1055,9 +1070,8 @@ function renderWsGrid(workspaces) {
     return `<div class="ws-card ${isPaused ? 'paused' : ''}">
       <div onclick="openWorkspace('${wsId}')" style="cursor:pointer">
         ${wsName
-          ? `<div class="ws-name">${wsName}</div>`
-          : `<div class="ws-name-placeholder">Unnamed — click to rename</div>`}
-        <div class="ws-id">${wsId}</div>
+          ? `<div class="ws-name">${wsName}</div><div class="ws-id">${wsId}</div>`
+          : `<div class="ws-id-main">${wsId}</div>`}
         <div class="ws-badges">
           <span class="badge ${isPaused ? 'badge-paused' : 'badge-active'}">${isPaused ? 'Paused' : 'Active'}</span>
           <span class="badge ${plan === 'pro' ? 'badge-pro' : 'badge-hobby'}">${plan}</span>
@@ -1066,6 +1080,9 @@ function renderWsGrid(workspaces) {
         <div class="ws-usage-label">${storageMib} MB / 512 MB free</div>
       </div>
       <div class="ws-card-footer">
+        <button class="ws-rename-btn" onclick="event.stopPropagation();openWorkspaceAndRename('${wsId}')">
+          ${wsName ? 'Rename' : '+ Name this workspace'}
+        </button>
         <button class="ws-key-btn" onclick="event.stopPropagation();openKeyModal('${wsId}')">View invite key</button>
       </div>
     </div>`;
@@ -1139,12 +1156,13 @@ function openCreateModal() {
   document.getElementById('create-modal').classList.add('open');
   wirePinDigits(CREATE_PIN_IDS);
   wirePinDigits(CREATE_CONFIRM_IDS);
-  setTimeout(() => document.getElementById('cp0').focus(), 50);
+  setTimeout(() => document.getElementById('create-ws-name').focus(), 50);
 }
 function closeCreateModal() {
   document.getElementById('create-modal').classList.remove('open');
   _createdInviteKey = null;
   clearPinDigits([...CREATE_PIN_IDS, ...CREATE_CONFIRM_IDS]);
+  document.getElementById('create-ws-name').value = '';
 }
 async function submitCreateWorkspace() {
   const pin = getPinValue(CREATE_PIN_IDS);
@@ -1157,10 +1175,11 @@ async function submitCreateWorkspace() {
   btn.disabled = true;
   btn.textContent = 'Creating…';
   try {
+    const wsName = (document.getElementById('create-ws-name').value || '').trim();
     const r = await fetch('/auth/create-workspace', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ pin }),
+      body: JSON.stringify({ pin, display_name: wsName || undefined }),
     });
     const d = await r.json();
     if (!r.ok) { errEl.textContent = d.error || 'Failed to create workspace'; errEl.style.display = 'block'; return; }
@@ -1279,6 +1298,11 @@ async function openWorkspace(engram_id, initialTab) {
     if (panelEl) panelEl.classList.add('active');
     if (initialTab === 'billing') await loadBilling(engram_id);
   }
+}
+
+async function openWorkspaceAndRename(engram_id) {
+  await openWorkspace(engram_id);
+  startRename();
 }
 
 // ── Rename workspace ────────────────────────────────────────────────

@@ -513,6 +513,8 @@ async def handle_create_workspace(request: Request) -> JSONResponse:
     if not pin.isdigit() or len(pin) != 4:
         return JSONResponse({"error": "PIN must be exactly 4 digits"}, status_code=400)
 
+    display_name = (body.get("display_name") or "").strip()[:80] or None
+
     try:
         pool = await _get_pool()
     except Exception as exc:
@@ -533,8 +535,9 @@ async def handle_create_workspace(request: Request) -> JSONResponse:
         async with pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute(
-                    f"INSERT INTO {SCHEMA}.workspaces (engram_id) VALUES ($1)",
+                    f"INSERT INTO {SCHEMA}.workspaces (engram_id, display_name) VALUES ($1, $2)",
                     engram_id,
+                    display_name,
                 )
                 await conn.execute(
                     f"""INSERT INTO {SCHEMA}.invite_keys (key_hash, engram_id, expires_at, uses_remaining)
