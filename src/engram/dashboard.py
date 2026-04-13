@@ -265,6 +265,73 @@ def build_dashboard_routes(storage: Storage, engine: Any = None) -> list[Route]:
 
         return HTMLResponse(_render_settings(workspace_info))
 
+    async def rename_workspace(request: Request) -> HTMLResponse:
+        from engram.workspace import read_workspace, set_workspace_setting
+
+        error: str | None = None
+        ws = read_workspace()
+
+        if ws is None:
+            error = "No workspace configured."
+        elif not ws.is_creator:
+            error = "Only the workspace creator can rename the workspace."
+        else:
+            try:
+                form = await request.form()
+                new_name = str(form.get("display_name", "")).strip()
+                if not new_name:
+                    raise ValueError("Workspace name cannot be empty.")
+                set_workspace_setting("display_name", new_name)
+                # Persist to database
+                if ws.db_url:
+                    from engram.postgres_storage import PostgresStorage
+
+                    pg = PostgresStorage(
+                        db_url=ws.db_url, workspace_id=ws.engram_id, schema=ws.schema
+                    )
+                    await pg.connect()
+                    await pg.update_workspace_display_name(ws.engram_id, new_name)
+                    await pg.close()
+                else:
+                    await storage.update_workspace_display_name(ws.engram_id, new_name)
+            except Exception as exc:
+                error = str(exc)
+
+        # Re-read updated config
+        ws = read_workspace()
+        workspace_info = None
+        if ws:
+            workspace_info = {
+                "engram_id": ws.engram_id,
+                "schema": ws.schema,
+                "anonymous_mode": ws.anonymous_mode,
+                "anon_agents": ws.anon_agents,
+                "is_creator": ws.is_creator,
+                "display_name": ws.display_name,
+                "description": ws.description,
+            }
+            try:
+                if ws.db_url:
+                    from engram.postgres_storage import PostgresStorage
+
+                    pg_storage = PostgresStorage(
+                        db_url=ws.db_url, workspace_id=ws.engram_id, schema=ws.schema
+                    )
+                    await pg_storage.connect()
+                    workspace_info["invite_keys"] = await pg_storage.get_invite_keys()
+                    await pg_storage.close()
+                else:
+                    workspace_info["invite_keys"] = await storage.get_invite_keys()
+            except Exception:
+                workspace_info["invite_keys"] = []
+
+        if error and workspace_info:
+            workspace_info["rename_error"] = error
+        elif workspace_info:
+            workspace_info["rename_success"] = True
+
+        return HTMLResponse(_render_settings(workspace_info))
+
     return [
         Route("/", landing, methods=["GET"]),
         Route("/dashboard", index, methods=["GET"]),
@@ -278,6 +345,7 @@ def build_dashboard_routes(storage: Storage, engine: Any = None) -> list[Route]:
         Route("/dashboard/agents", agents_view, methods=["GET"]),
         Route("/dashboard/expiring", expiring_view, methods=["GET"]),
         Route("/dashboard/settings", settings_view, methods=["GET"]),
+        Route("/dashboard/settings/rename", rename_workspace, methods=["POST"]),
     ]
 
 
@@ -1217,6 +1285,13 @@ def _render_settings(workspace_info: dict | None) -> str:
 
     body = f"""
     <h2>Workspace Settings</h2>
+
+    {name_section}
+
+    <div style="margin-bottom:2rem;">
+        <h3 style="font-size:1rem;color:#374151;margin-bottom:0.5rem;">Description</h3>
+        <code style="background:#f3f4f6;padding:0.5rem;border-radius:4px;">{_esc(description) or "(not set)"}</code>
+    </div>
     
     <div style="margin-bottom:2rem;">
         <h3 style="font-size:1rem;color:#374151;margin-bottom:0.5rem;">Display Name</h3>

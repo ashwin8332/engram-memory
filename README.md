@@ -16,34 +16,40 @@ Persistent memory that survives across sessions and detects when agents contradi
 
 ## What It Does
 
-When one agent discovers something important — a hidden side effect, a failed approach, an undocumented constraint — it commits that fact. Every other agent on your team can query it instantly.
+There are a lot of tools that give agents memory. Engram works alongside any of them.
 
-When two agents develop incompatible beliefs, Engram detects the contradiction and surfaces it for review.
+What makes Engram different: it catches when agents contradict each other. One agent learns something, another agent learns something else, and now they disagree. Engram detects that and surfaces it before it becomes a bug.
 
-**Your data is private.** All data is encrypted, isolated by workspace, and never read, analyzed, or redistributed. We have a deep commitment to privacy.
+Your whole team shares the same memory. Your agents, your teammates' agents — everyone stays in sync. The same context, the same facts, no duplicated mistakes.
+
+Right now it's your personal memory layer that survives across sessions. The bigger picture is a consistency layer for teams of hundreds of agents working on the same codebase at once.
 
 ---
 
 ## Quick Start
 
+**Step 1 — Create an account**
+
+Sign up at [engram-memory.com/dashboard](https://engram-memory.com/dashboard). Create a new workspace or join an existing one using an invite key from a teammate.
+
+**Step 2 — Run the installer**
+
 **macOS / Linux:**
 ```bash
-curl -fsSL https://engram-us.com/install | sh
+curl -fsSL https://engram-memory.com/install | sh
 ```
 
 **Windows PowerShell:**
 ```powershell
-irm https://engram-us.com/install.ps1 | iex
+irm https://engram-memory.com/install.ps1 | iex
 ```
 
 **Windows CMD:**
 ```cmd
-curl -fsSL https://engram-us.com/install.cmd -o install.cmd && install.cmd && del install.cmd
+curl -fsSL https://engram-memory.com/install.cmd -o install.cmd && install.cmd && del install.cmd
 ```
 
-By default, the installer writes `https://mcp.engram.app/mcp` into your MCP config. If your environment needs a different endpoint, set `ENGRAM_MCP_URL` before running the installer.
-
-Restart your editor, then ask your agent:
+**Step 3 — Restart your editor, then ask your agent:**
 ```
 "Set up Engram for my team"
 ```
@@ -57,6 +63,8 @@ Your agent handles the rest.
 Engram is currently optimized for MCP-native workflows in:
 
 - [Claude Code](./docs/quickstart/claude-code.md)
+- [Cursor](./docs/quickstart/cursor.md)
+- [VS Code (Copilot)](./docs/quickstart/vscode-copilot.md)
 - [Windsurf](./docs/quickstart/windsurf.md)
 - [Zed](./docs/quickstart/zed.md)
 
@@ -84,97 +92,13 @@ If `engram` is not on your `PATH`, `python -m engram.cli ...` works reliably.
 
 ## Setup Flow
 
-### Creating a Workspace
-
-> 🤖 **Agent**
->
-> Do you have an Invite Key to join an existing workspace, or are you setting up a new one?
-
-> 👤 **You**
->
-> New
-
-> 🤖 **Agent**
->
-> ✅ Your team workspace is ready.
->
-> Share this Invite Key with teammates:
-> ```
-> ek_live_abc123...
-> ```
->
-> That's all they need — one key, nothing else to configure.
->
-> Should commits show who made them, or stay anonymous?
-
----
----
-
-## 🎥 Getting Started Video
-
-Watch this quick demo to get started with Engram:
-
-(Video coming soon — placeholder added for future update)
-> This video walks through installation, setup, and basic usage.
-
----
-### Joining a Workspace
-
-> 🤖 **Agent**
->
-> Do you have an Invite Key to join an existing workspace, or are you setting up a new one?
-
-> 👤 **You**
->
-> Join — here's my key: `ek_live_abc123...`
-
-> 🤖 **Agent**
->
-> You're in. I'll query team memory before starting work on anything.
-
-**That's it.** Teammates only need the Invite Key. No database URL, no Team ID, no configuration.
-
----
-
-## How It Works
-
-```
-┌──────────────────────────────────────────┐
-│            MCP Tools                     │
-│  engram_commit  — Write a fact           │
-│  engram_query   — Read team knowledge    │
-│  engram_conflicts — See disagreements    │
-│  engram_resolve — Settle conflicts       │
-├──────────────────────────────────────────┤
-│        Conflict Detection                │
-│  Tier 0: Entity exact-match              │
-│  Tier 1: NLI cross-encoder (local)       │
-│  Tier 2: Numeric/temporal rules          │
-│  Tier 3: LLM escalation (rare)           │
-├──────────────────────────────────────────┤
-│          Hosted Storage                  │
-│  Managed Postgres — zero setup           │
-│  Isolated per workspace                  │
-└──────────────────────────────────────────┘
-```
-
-No database to provision, no servers to run, no ports to open. Install and go.
+Create an account at [engram-memory.com](https://engram-memory.com) to start a workspace. A demo video is coming soon that will walk through the full setup flow.
 
 ---
 
 ## Privacy & Security
 
-Your memory is yours. This isn't a footnote — it's the foundation Engram is built on.
-
-**Encrypted.** All data is encrypted in transit (TLS) and at rest. Invite keys use encrypted payloads so teammates never see raw credentials.
-
-**Isolated.** Every workspace is fully isolated. There is no cross-workspace access, no shared tables, no data leakage between teams.
-
-**Never read.** We don't read your facts. We don't analyze your memory. We don't train on your data. We don't sell it. We have no analytics pipeline that touches your content. Period.
-
-**Never redistributed.** Your team's knowledge never leaves your workspace. It is never shared with other users, other teams, or third parties. Not now, not ever.
-
-**You control it.** Delete your workspace and everything is gone. Anonymous mode strips engineer names from all commits. Anonymous agents randomize agent IDs each session. You decide what's visible and what isn't.
+Your data is encrypted in transit and at rest, fully isolated per workspace, and never read, analyzed, trained on, or shared with anyone. Delete your workspace and everything is gone.
 
 ---
 
@@ -204,6 +128,7 @@ engram config show        # Display configuration
 engram config set <key>   # Update configuration
 engram tail               # Live stream of workspace commits
 engram verify             # Verify installation
+engram doctor             # Diagnose setup issues
 engram completion <shell> # Install shell tab completion
 ```
 
@@ -211,37 +136,38 @@ engram completion <shell> # Install shell tab completion
 
 ## Conflict Detection
 
-Runs asynchronously in the background:
+Every commit triggers LLM-powered conflict detection. The entire fact corpus is scanned — no fact is skipped.
 
-| Tier | Method | Catches |
-|---|---|---|
-| 0 | Entity matching | "rate limit is 1000" vs "rate limit is 2000" |
-| 1 | NLI cross-encoder | Semantic contradictions |
-| 2 | Numeric rules | Different values for same entity |
-| 3 | LLM escalation | Ambiguous cases (rare, optional) |
+On each commit, all active facts are batched into 8k-token context windows and checked for semantic contradictions. Batches run concurrently. Commits return instantly; conflicts surface on the dashboard as they're found.
 
-Commits return instantly. Detection completes in the background (~2-10s on CPU).
+---
+
+## The Detective
+
+Pairwise contradiction detection misses the most common failure mode: not two facts that directly contradict, but a reversal across time. Engram reads the workspace's commit history as a **chronological story** and asks: *where would a new agent get confused about what's currently true?*
+
+It catches reversals, ambiguity between active facts, and stale claims that pairwise detection can't see. A forgetting curve keeps the signal-to-noise ratio high.
+
+This is Engram's moat — designed as a layer that works on top of Engram's memory or any other agent memory system.
+
+Full design: [`docs/CONFLICT_DETECTIVE.md`](./docs/CONFLICT_DETECTIVE.md)
 
 ---
 
 ## Memory That Forgets on Purpose
 
-Engram doesn't just accumulate — it actively forgets what doesn't earn its place.
-
-- **Ephemeral memory** — Scratchpad facts auto-expire in 24h unless queried twice ("proved useful more than once")
-- **Importance decay** — Unverified inferences expire after 30 days. Unverified observations expire after 90 days.
-- **Protected facts** — Decisions, verified facts, and corroborated claims are never auto-retired.
-- **Steeper recency curve** — A 90-day-old fact scores 0.001 in retrieval. Old context stops crowding out what matters now.
-
-Grounded in the [FiFA/MaRS research](https://arxiv.org/abs/2512.12856) on forgetting-by-design for cognitive agents.
+Not everything deserves to stick around. Scratchpad facts expire in 24h, unverified observations after 90 days. Decisions and confirmed facts are kept forever. Old context stops crowding out what matters now.
 
 ---
 
 ## Research Foundation
 
-Engram is grounded in peer-reviewed research on multi-agent memory systems:
+Engram exists because of a paper.
 
-- **[Yu et al. (2026)](https://arxiv.org/abs/2603.10062)** — Multi-agent memory as a computer architecture problem
+**[Multi-Agent Memory from a Computer Architecture Perspective: Visions and Challenges Ahead](https://arxiv.org/abs/2603.10062)** — Yu et al. (2026), UCSD SysEvol — is the primary intellectual foundation of this project. It reframes multi-agent memory as a computer architecture problem: coherence, consistency, and shared state across concurrent agents. That framing is what Engram is built to implement in practice.
+
+The rest of the literature informs specific subsystems:
+
 - **[Xu et al. (2025)](https://arxiv.org/abs/2502.12110)** — A-Mem's Zettelkasten structure for fact enrichment
 - **[Rasmussen et al. (2025)](https://arxiv.org/abs/2501.13956)** — Graphiti's bitemporal modeling for temporal validity
 - **[Hu et al. (2026)](https://arxiv.org/abs/2512.13564)** — Survey confirming shared memory as an open frontier
@@ -255,6 +181,8 @@ Implementation details: [`docs/IMPLEMENTATION.md`](./docs/IMPLEMENTATION.md)
 ## Contributing
 
 PRs welcome. See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+
+For a full description of the test suite — what each module covers and the per-test breakdown for lifecycle and conflict tests — see [`tests/TESTS.md`](./tests/TESTS.md).
 
 ---
 
