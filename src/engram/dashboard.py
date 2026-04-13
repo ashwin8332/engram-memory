@@ -1287,7 +1287,9 @@ def _render_settings(workspace_info: dict | None) -> str:
 
     rename_feedback = ""
     if rename_error:
-        rename_feedback = f'<p style="color:#dc2626;font-size:0.8rem;margin-top:0.5rem;">{_esc(rename_error)}</p>'
+        rename_feedback = (
+            f'<p style="color:#dc2626;font-size:0.8rem;margin-top:0.5rem;">{_esc(rename_error)}</p>'
+        )
     elif rename_success:
         rename_feedback = '<p style="color:#16a34a;font-size:0.8rem;margin-top:0.5rem;">Workspace name updated.</p>'
 

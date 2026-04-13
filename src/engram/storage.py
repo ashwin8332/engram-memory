@@ -1997,15 +1997,13 @@ class SQLiteStorage(BaseStorage):
         counts["conflicts_scrubbed"] = c.rowcount
 
         c = await self.db.execute(
-            "UPDATE agents SET engineer = '[redacted]' "
-            "WHERE agent_id = ? AND workspace_id = ?",
+            "UPDATE agents SET engineer = '[redacted]' WHERE agent_id = ? AND workspace_id = ?",
             (agent_id, self.workspace_id),
         )
         counts["agents_redacted"] = c.rowcount
 
         c = await self.db.execute(
-            "UPDATE audit_log SET agent_id = '[redacted]' "
-            "WHERE agent_id = ? AND workspace_id = ?",
+            "UPDATE audit_log SET agent_id = '[redacted]' WHERE agent_id = ? AND workspace_id = ?",
             (agent_id, self.workspace_id),
         )
         counts["audit_scrubbed"] = c.rowcount
@@ -2061,15 +2059,13 @@ class SQLiteStorage(BaseStorage):
         counts["permissions_deleted"] = c.rowcount
 
         c = await self.db.execute(
-            "UPDATE audit_log SET agent_id = '[redacted]' "
-            "WHERE agent_id = ? AND workspace_id = ?",
+            "UPDATE audit_log SET agent_id = '[redacted]' WHERE agent_id = ? AND workspace_id = ?",
             (agent_id, self.workspace_id),
         )
         counts["audit_scrubbed"] = c.rowcount
 
         await self.db.execute(
-            "UPDATE agents SET engineer = '[redacted]' "
-            "WHERE agent_id = ? AND workspace_id = ?",
+            "UPDATE agents SET engineer = '[redacted]' WHERE agent_id = ? AND workspace_id = ?",
             (agent_id, self.workspace_id),
         )
 
