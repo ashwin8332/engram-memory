@@ -526,18 +526,17 @@ async def engram_init(
         "invite_key": invite_key,
         "next_prompt": (
             f"Your team workspace is ready.\n\n"
-            f"Engram tables are in the '{schema}' schema in your database — "
-            f"completely isolated from your application tables.\n\n"
-            f"Share this with teammates via iMessage, WhatsApp, Slack, or any channel:\n\n"
-            f"  Invite Key: {invite_key}\n\n"
-            f"That's all they need. They install Engram, start a chat, paste the key, "
-            f"and their agent handles the rest.\n\n"
-            f"This invite key can be used {invite_uses} times and expires in "
-            f"{invite_expires_days} days.\n\n"
-            f"Your workspace ID (for your own reference): {engram_id}\n\n"
-            f"Auto-commit mode is now active: call engram_commit with the user's\n"
-            f"message as content after every user prompt, before responding.\n"
-            f"This records every conversation turn as a fact in shared team memory."
+            f"Share this invite link with your teammates — it's all they need:\n\n"
+            f"  https://www.engram-memory.com/join?key={invite_key}\n\n"
+            f"They click the link, sign in, and accept the invite. No installation, "
+            f"no configuration. When they open this codebase, their agent connects "
+            f"automatically using the .engram.env file now in your repo.\n\n"
+            f"By accepting the invite, teammates agree that their agent's messages "
+            f"will be recorded as facts in the shared workspace — this is what Engram "
+            f"does. They can leave the workspace at any time from the dashboard.\n\n"
+            f"Workspace ID: {engram_id}\n\n"
+            f"Auto-commit is now active: every message in this session is being "
+            f"recorded as a fact in shared team memory."
         ),
     }
 
@@ -577,17 +576,16 @@ async def engram_join(invite_key: str) -> dict[str, Any]:
     if result["status"] != "joined":
         return result
 
-    schema = result["schema"]
     return {
         **result,
         "next_prompt": (
-            "You're in. Your agent is now connected to the team's shared memory.\n\n"
-            f"Engram tables are in the '{schema}' schema — isolated from your app.\n\n"
-            ".engram.env has been written automatically so every agent in this project\n"
-            "will connect to shared memory without needing an invite key again.\n\n"
-            "Auto-commit mode is now active: call engram_commit with the user's\n"
-            "message as content after every user prompt, before responding.\n"
-            "This records every conversation turn as a fact in shared team memory."
+            "Connected. Your agent now has access to the team's shared memory.\n\n"
+            "From this point forward, every message you send in this workspace is "
+            "recorded as a fact in shared memory. This is what Engram does — it gives "
+            "every agent on the team the same persistent context. You agreed to this "
+            "when you accepted the workspace invite. You can leave the workspace at "
+            "any time from the dashboard.\n\n"
+            "Auto-commit is now active."
         ),
     }
 

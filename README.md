@@ -2,9 +2,9 @@
 
 # Engram
 
-**Shared memory for your team's agents**
+**Shared memory for your team's AI agents**
 
-Persistent memory that survives across sessions and detects when agents contradict each other.
+Every agent on the team sees the same verified facts. When agents contradict each other, Engram catches it before it becomes a bug.
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](./LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-compatible-8b5cf6?style=flat-square)](https://modelcontextprotocol.io)
@@ -14,175 +14,134 @@ Persistent memory that survives across sessions and detects when agents contradi
 
 ---
 
-## What It Does
+## How It Works
 
-There are a lot of tools that give agents memory. Engram works alongside any of them.
+When your team works in the same codebase, your AI agents work in parallel — and drift apart. One agent learns something, another learns something different, and now they disagree. Engram detects that and surfaces it before it becomes a bug.
 
-What makes Engram different: it catches when agents contradict each other. One agent learns something, another agent learns something else, and now they disagree. Engram detects that and surfaces it before it becomes a bug.
-
-Your whole team shares the same memory. Your agents, your teammates' agents — everyone stays in sync. The same context, the same facts, no duplicated mistakes.
-
-Right now it's your personal memory layer that survives across sessions. The bigger picture is a consistency layer for teams of hundreds of agents working on the same codebase at once.
+Every agent's messages are automatically committed to shared memory as facts. No manual step. No copy-pasting context between sessions. The team's collective knowledge accumulates and every agent benefits from it instantly.
 
 ---
 
-## Quick Start
+## Getting Started
 
-**Step 1 — Create an account**
+### If you're setting up Engram for your team
 
-Sign up at [engram-memory.com/dashboard](https://engram-memory.com/dashboard). Create a new workspace or join an existing one using an invite key from a teammate.
+You do this once. Your teammates don't need to touch it.
 
-**Step 2 — Run the installer**
+**Step 1 — Create a workspace**
 
-**macOS / Linux:**
+Go to [engram-memory.com/dashboard](https://engram-memory.com/dashboard), sign in, and create a new workspace. You'll get an invite link to share with your team.
+
+**Step 2 — Install Engram in your editor**
+
 ```bash
 curl -fsSL https://engram-memory.com/install | sh
 ```
 
-**Windows PowerShell:**
-```powershell
-irm https://engram-memory.com/install.ps1 | iex
-```
+This configures your IDE and installs the auto-commit hook. Restart your editor when it's done.
 
-**Windows CMD:**
-```cmd
-curl -fsSL https://engram-memory.com/install.cmd -o install.cmd && install.cmd && del install.cmd
-```
+**Step 3 — Ask your agent to connect**
 
-**Step 3 — Restart your editor, then ask your agent:**
 ```
 "Set up Engram for my team"
 ```
 
-Your agent handles the rest.
+Your agent reads `.engram.env` from the workspace, connects to shared memory, and commits every conversation to the team's shared record going forward. The `.engram.env` file stays in the repo so your teammates connect automatically.
 
 ---
 
-## First-Class IDE Targets
+### If you're joining a teammate's workspace
 
-Engram is currently optimized for MCP-native workflows in:
+You don't need to install anything.
 
-- [Claude Code](./docs/quickstart/claude-code.md)
-- [Cursor](./docs/quickstart/cursor.md)
-- [VS Code (Copilot)](./docs/quickstart/vscode-copilot.md)
-- [Windsurf](./docs/quickstart/windsurf.md)
-- [Zed](./docs/quickstart/zed.md)
+Click the invite link your teammate shared, sign in at [engram-memory.com](https://engram-memory.com), and accept the workspace invite. When you open the codebase, your AI agent reads the `.engram.env` file already in the repo and connects automatically.
 
-Each guide includes the expected MCP config path, restart step, verification flow, and common setup mistakes.
-
-
-## Running Locally
-
-If you want to run Engram from this repository during development:
-
-```powershell
-pip install -e ".[dev]"
-python -m engram.cli serve --http
-```
-
-Then open:
-
-```text
-http://127.0.0.1:7474/dashboard
-```
-
-If `engram` is not on your `PATH`, `python -m engram.cli ...` works reliably.
+> Your agent's messages will be recorded as facts in the shared workspace. This is what Engram is — a shared memory layer for your team's agents. By accepting the workspace invite, you're agreeing to this. You can leave the workspace at any time from the dashboard.
 
 ---
 
-## Setup Flow
+## What Gets Committed
 
-Create an account at [engram-memory.com](https://engram-memory.com) to start a workspace. A demo video is coming soon that will walk through the full setup flow.
+Every message you send to your AI agent is recorded in shared team memory as a fact. The agent's responses are not stored — only your inputs. This gives every agent on the team a running record of what was asked, decided, and discovered.
 
----
-
-## Privacy & Security
-
-Your data is encrypted in transit and at rest, fully isolated per workspace, and never read, analyzed, trained on, or shared with anyone. Delete your workspace and everything is gone.
-
----
-
-## Tools
-
-| Tool | Purpose |
-|---|---|
-| `engram_commit` | Persist a verified discovery |
-| `engram_query` | Pull what your team's agents know |
-| `engram_conflicts` | Surface contradictions |
-| `engram_resolve` | Settle disagreements |
-| `engram_promote` | Graduate ephemeral memory to durable |
-
-### CLI Commands
-
-```bash
-engram install              # Auto-detect IDEs and configure MCP
-engram serve               # Start MCP server (stdio mode)
-engram serve --http        # Start MCP server (HTTP mode)
-engram setup              # One-command workspace setup
-engram status             # Show workspace status
-engram info               # Display detailed workspace info
-engram whoami             # Show current user identity
-engram search <query>     # Query workspace from terminal
-engram stats              # Show workspace statistics
-engram config show        # Display configuration
-engram config set <key>   # Update configuration
-engram tail               # Live stream of workspace commits
-engram verify             # Verify installation
-engram doctor             # Diagnose setup issues
-engram completion <shell> # Install shell tab completion
-```
+Facts accumulate. The next time any agent on the team opens this codebase — yours, your teammate's, anyone with workspace access — they start with the full context of everything that's been verified.
 
 ---
 
 ## Conflict Detection
 
-Every commit triggers LLM-powered conflict detection. The entire fact corpus is scanned — no fact is skipped.
+Every commit triggers conflict detection across the full fact corpus. When two agents have recorded contradictory facts, Engram surfaces the contradiction on the dashboard before either agent acts on stale information.
 
-On each commit, all active facts are batched into 8k-token context windows and checked for semantic contradictions. Batches run concurrently. Commits return instantly; conflicts surface on the dashboard as they're found.
-
----
-
-## The Detective
-
-Pairwise contradiction detection misses the most common failure mode: not two facts that directly contradict, but a reversal across time. Engram reads the workspace's commit history as a **chronological story** and asks: *where would a new agent get confused about what's currently true?*
-
-It catches reversals, ambiguity between active facts, and stale claims that pairwise detection can't see. A forgetting curve keeps the signal-to-noise ratio high.
-
-This is Engram's moat — designed as a layer that works on top of Engram's memory or any other agent memory system.
+Engram reads the workspace's commit history as a chronological story and asks: *where would a new agent get confused about what's currently true?* It catches reversals and ambiguity that simple pairwise comparison misses.
 
 Full design: [`docs/CONFLICT_DETECTIVE.md`](./docs/CONFLICT_DETECTIVE.md)
 
 ---
 
-## Memory That Forgets on Purpose
+## Privacy & Data
 
-Not everything deserves to stick around. Scratchpad facts expire in 24h, unverified observations after 90 days. Decisions and confirmed facts are kept forever. Old context stops crowding out what matters now.
+- **Isolated per workspace.** Your data is never mixed with other workspaces.
+- **Encrypted in transit and at rest.**
+- **Never used for training.** Your facts are never read, analyzed, or shared with anyone outside your workspace.
+- **Right to erasure.** Delete your workspace and every fact is gone. GDPR-compliant erasure is built into the core engine.
+
+---
+
+## IDE Support
+
+Engram works with any AI coding environment. First-class support for:
+
+- [Claude Code](./docs/quickstart/claude-code.md)
+- [Cursor](./docs/quickstart/cursor.md)
+- [Windsurf / Kiro](./docs/quickstart/windsurf.md)
+- [VS Code (Copilot)](./docs/quickstart/vscode-copilot.md)
+- [Zed](./docs/quickstart/zed.md)
+
+Agents without MCP support connect via the REST API using the credentials in `.engram.env`. Instructions are in `AGENTS.md` at the root of every Engram-enabled repo.
+
+---
+
+## CLI Reference
+
+```bash
+engram install          # Configure your IDE and install the auto-commit hook
+engram verify           # Check that everything is connected
+engram search <query>   # Query workspace memory from the terminal
+engram tail             # Live stream of commits as they happen
+engram serve --http     # Run the MCP server locally (port 7474)
+```
+
+---
+
+## Self-Hosting
+
+Engram runs on any Postgres database. Point it at your own instance and your facts never leave your infrastructure.
+
+```bash
+export ENGRAM_DB_URL='postgres://user:password@host:port/database'
+engram serve --http
+```
+
+Full setup: [`docs/DEVELOPER_SETUP.md`](./docs/DEVELOPER_SETUP.md)
 
 ---
 
 ## Research Foundation
 
-Engram exists because of a paper.
+Engram is built on a body of research that reframes multi-agent memory as a computer architecture problem — coherence, consistency, and shared state across concurrent agents.
 
-**[Multi-Agent Memory from a Computer Architecture Perspective: Visions and Challenges Ahead](https://arxiv.org/abs/2603.10062)** — Yu et al. (2026), UCSD SysEvol — is the primary intellectual foundation of this project. It reframes multi-agent memory as a computer architecture problem: coherence, consistency, and shared state across concurrent agents. That framing is what Engram is built to implement in practice.
-
-The rest of the literature informs specific subsystems:
-
+- **[Yu et al. (2026)](https://arxiv.org/abs/2603.10062)** — Primary intellectual foundation. Multi-agent memory from a computer architecture perspective.
 - **[Xu et al. (2025)](https://arxiv.org/abs/2502.12110)** — A-Mem's Zettelkasten structure for fact enrichment
 - **[Rasmussen et al. (2025)](https://arxiv.org/abs/2501.13956)** — Graphiti's bitemporal modeling for temporal validity
 - **[Hu et al. (2026)](https://arxiv.org/abs/2512.13564)** — Survey confirming shared memory as an open frontier
-- **[Alqithami (2025)](https://arxiv.org/abs/2512.12856)** — FiFA: forgetting-by-design improves agent coherence
 
-Full literature review: [`docs/LITERATURE.md`](./docs/LITERATURE.md)  
-Implementation details: [`docs/IMPLEMENTATION.md`](./docs/IMPLEMENTATION.md)
+Full literature review: [`docs/LITERATURE.md`](./docs/LITERATURE.md)
 
 ---
 
 ## Contributing
 
-PRs welcome. See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
-
-For a full description of the test suite — what each module covers and the per-test breakdown for lifecycle and conflict tests — see [`tests/TESTS.md`](./tests/TESTS.md).
+PRs welcome. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) and [`HIRING.md`](./HIRING.md) for paid contract work ($125–185/hour).
 
 ---
 

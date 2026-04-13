@@ -1,17 +1,43 @@
-# Windsurf Quickstart
+# Windsurf / Kiro
 
-Windsurf is Codeium's AI-powered code editor.
+## If you're setting up Engram for your team
 
-## Setup
+Run the installer once:
 
-### Option 1: Auto-install (Recommended)
 ```bash
 curl -fsSL https://engram-memory.com/install | sh
 ```
 
-### Option 2: Manual Setup
+This writes the Engram MCP server to `~/.codeium/windsurf/mcp_config.json`
+and adds Engram instructions to Kiro's steering documents.
 
-1. Create or edit `~/.codeium/windsurf/mcp_config.json`:
+Restart Windsurf, then ask your agent:
+
+```
+"Set up Engram for my team"
+```
+
+Share the invite link from the dashboard with your team.
+
+## If you're joining a teammate's workspace
+
+You don't need to install anything. Click the invite link your teammate
+shared, sign in at [engram-memory.com](https://engram-memory.com), and
+accept the workspace invite.
+
+When you open the codebase, your agent reads `AGENTS.md` and `.engram.env`
+from the repo and connects via the REST API automatically. Your messages
+will be recorded in shared memory — this is what you agreed to when you
+accepted the invite.
+
+## Verification
+
+Ask your agent: `"Am I connected to Engram? Check .engram.env and query the API."`
+
+## Note on MCP
+
+Windsurf uses `serverUrl` (capital U) in its MCP config:
+
 ```json
 {
   "mcpServers": {
@@ -22,51 +48,10 @@ curl -fsSL https://engram-memory.com/install | sh
 }
 ```
 
-For local development:
-```json
-{
-  "mcpServers": {
-    "engram": {
-      "serverUrl": "http://localhost:7474/mcp"
-    }
-  }
-}
-```
-
-Note: Windsurf uses `serverUrl` (capital U), not `url`.
-
-2. Restart Windsurf
-
-## First Time Setup
-
-1. Open a new chat in Windsurf
-2. Tell it: `"Set up Engram for my team"` to create workspace
-3. Or: `"Join Engram with key ek_live_..."` to join existing workspace
-
-## Usage
-
-Windsurf will automatically:
-- Query team knowledge before working on code
-- Commit discoveries to shared memory
-- Detect conflicts between facts
-
-## Verification
-
-```bash
-engram verify
-```
-
-**In your IDE:** Ask your agent: "Call engram_status and tell me what it returns."
-
-Expected output:
-```
-{"status": "ready", "mode": "team", "engram_id": "ENG-XXXXXX", "schema": "engram"}
-```
+The installer handles this automatically.
 
 ## Troubleshooting
 
 - Check config: `cat ~/.codeium/windsurf/mcp_config.json`
-- Note: uses `serverUrl` not `url`
 - Restart Windsurf after config changes
-
-See [docs/TROUBLESHOOTING.md](../TROUBLESHOOTING.md) for more help.
+- Full guide: [docs/TROUBLESHOOTING.md](../TROUBLESHOOTING.md)
