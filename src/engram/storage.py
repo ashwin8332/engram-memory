@@ -2060,7 +2060,6 @@ class SQLiteStorage(BaseStorage):
 
     async def gdpr_soft_erase_agent(self, agent_id: str) -> dict[str, int]:
         """Soft-erase: redact PII, preserve fact content and validity."""
-        now = _now_iso()
         stats: dict[str, int] = {
             "facts_updated": 0,
             "conflicts_scrubbed": 0,
