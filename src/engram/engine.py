@@ -40,6 +40,46 @@ def _load_entities(raw: Any) -> list[dict[str, Any]]:
     return json.loads(raw) if raw else []
 
 
+def _clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
+    return max(lower, min(upper, value))
+
+
+def _fact_age_days(fact: dict[str, Any], now: datetime | None = None) -> int:
+    try:
+        committed = datetime.fromisoformat(fact["committed_at"])
+        if committed.tzinfo is None:
+            committed = committed.replace(tzinfo=timezone.utc)
+        reference = now or datetime.now(timezone.utc)
+        return max(0, (reference - committed).days)
+    except (KeyError, ValueError, TypeError):
+        return 0
+
+
+def _effective_confidence(
+    fact: dict[str, Any],
+    *,
+    has_open_conflict: bool = False,
+    now: datetime | None = None,
+) -> float:
+    """Compute query-time confidence without mutating the stored value."""
+    base = _clamp(float(fact.get("confidence") or 0.0))
+    query_hits = max(0, int(fact.get("query_hits") or 0))
+    corroborating_agents = max(0, int(fact.get("corroborating_agents") or 0))
+    days_old = _fact_age_days(fact, now=now)
+
+    unreinforced = query_hits == 0 and corroborating_agents == 0
+    decay_rate = 0.006 if unreinforced else 0.003
+    confidence = base * math.exp(-decay_rate * days_old)
+
+    confidence += min(0.15, 0.06 * math.log1p(corroborating_agents))
+    confidence += min(0.10, 0.025 * math.log1p(query_hits))
+
+    if has_open_conflict:
+        confidence -= 0.20
+
+    return _clamp(confidence)
+
+
 class EngramEngine:
     """Core engine coordinating commit, query, detection, and resolution."""
 
@@ -622,12 +662,19 @@ class EngramEngine:
                 # This fact IS a correction — boost it slightly
                 supersession_penalty = 1.05
 
+            has_open_conflict = fid in open_conflict_ids
+            effective_confidence = _effective_confidence(
+                fact,
+                has_open_conflict=has_open_conflict,
+            )
+
             # Combined score — weights tuned for relevance at scale.
             # Recency is the strongest signal after relevance because at
             # 100k+ facts, old context is the primary source of noise.
             score = (
                 relevance
                 + 0.25 * recency
+                + 0.2 * effective_confidence
                 + 0.15 * trust
                 + 0.15 * fact_type_weight
                 + 0.1 * provenance_weight
@@ -651,7 +698,7 @@ class EngramEngine:
 
             # Penalize facts with unresolved conflicts — disputed facts
             # should not confidently inform agent decisions
-            if fid in open_conflict_ids:
+            if has_open_conflict:
                 score *= 0.5
 
             scored.append((score, fact))
@@ -666,19 +713,28 @@ class EngramEngine:
             is_ephemeral = fact.get("durability") == "ephemeral"
             if is_ephemeral:
                 ephemeral_ids.append(fact["id"])
+            has_open_conflict = fact["id"] in open_conflict_ids
             results.append(
                 {
                     "fact_id": fact["id"],
                     "content": fact["content"],
                     "scope": fact["scope"],
                     "confidence": fact["confidence"],
+                    "effective_confidence": round(
+                        _effective_confidence(
+                            fact,
+                            has_open_conflict=has_open_conflict,
+                        ),
+                        4,
+                    ),
                     "fact_type": fact["fact_type"],
                     "agent_id": fact["agent_id"],
                     "committed_at": fact["committed_at"],
-                    "has_open_conflict": fact["id"] in open_conflict_ids,
+                    "has_open_conflict": has_open_conflict,
                     "verified": fact.get("provenance") is not None,
                     "provenance": fact.get("provenance"),
                     "corroborating_agents": fact.get("corroborating_agents", 0),
+                    "query_hits": fact.get("query_hits", 0),
                     "relevance_score": round(score, 4),
                     "durability": fact.get("durability", "durable"),
                     "adjacent": False,
@@ -702,9 +758,13 @@ class EngramEngine:
             results.sort(key=lambda r: r["relevance_score"], reverse=True)
             results = results[:limit]
 
-        # Track query hits on ephemeral facts and auto-promote if threshold met
+        # Track query hits for confidence reinforcement. Ephemeral facts also
+        # use query hits for auto-promotion.
+        returned_ids = [str(r["fact_id"]) for r in results]
+        if returned_ids:
+            await self.storage.increment_query_hits(returned_ids)
+        ephemeral_ids = [str(r["fact_id"]) for r in results if r.get("durability") == "ephemeral"]
         if ephemeral_ids:
-            await self.storage.increment_query_hits(ephemeral_ids)
             # Auto-promote ephemeral facts that have now been queried enough
             promotable = await self.storage.get_promotable_ephemeral_facts(min_hits=2)
             for pf in promotable:
@@ -794,7 +854,12 @@ class EngramEngine:
             if sim < similarity_threshold:
                 continue
 
-            score = sim * score_penalty
+            has_open_conflict = fact["id"] in open_conflict_ids
+            effective_confidence = _effective_confidence(
+                fact,
+                has_open_conflict=has_open_conflict,
+            )
+            score = (sim + 0.2 * effective_confidence) * score_penalty
 
             results.append(
                 {
@@ -802,13 +867,15 @@ class EngramEngine:
                     "content": fact["content"],
                     "scope": fact["scope"],
                     "confidence": fact["confidence"],
+                    "effective_confidence": round(effective_confidence, 4),
                     "fact_type": fact["fact_type"],
                     "agent_id": fact["agent_id"],
                     "committed_at": fact["committed_at"],
-                    "has_open_conflict": fact["id"] in open_conflict_ids,
+                    "has_open_conflict": has_open_conflict,
                     "verified": fact.get("provenance") is not None,
                     "provenance": fact.get("provenance"),
                     "corroborating_agents": fact.get("corroborating_agents", 0),
+                    "query_hits": fact.get("query_hits", 0),
                     "relevance_score": round(score, 4),
                     "durability": fact.get("durability", "durable"),
                     "adjacent": True,
