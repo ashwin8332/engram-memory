@@ -2004,7 +2004,7 @@ class SQLiteStorage(BaseStorage):
             now = datetime.now(timezone.utc)
             billing_period = f"{now.year}-{now.month:02d}"
 
-        cursor = await self.db.execute(
+        await self.db.execute(
             "INSERT INTO usage_events (id, workspace_id, event_type, quantity, billing_period, created_at) VALUES (?, ?, ?, ?, ?, ?)",
             (
                 str(uuid.uuid4()),
@@ -2050,7 +2050,7 @@ class SQLiteStorage(BaseStorage):
         if not event_ids:
             return
         placeholders = ",".join("?" * len(event_ids))
-        cursor = await self.db.execute(
+        await self.db.execute(
             f"UPDATE usage_events SET synced_to_stripe = 1 WHERE id IN ({placeholders})",
             event_ids,
         )
