@@ -378,6 +378,7 @@ async def handle_session_search(request: Request) -> JSONResponse:
     # shows fresh conflicts without waiting for the next commit.
     try:
         from api.mcp import _detect_conflicts_heuristic
+
         await _detect_conflicts_heuristic(engram_id, pool)
     except Exception:
         pass
