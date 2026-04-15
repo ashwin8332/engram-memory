@@ -1203,20 +1203,14 @@ class PostgresStorage(BaseStorage):
 
     async def delete_workspace(self, engram_id: str) -> None:
         async with self.acquire() as conn:
-            await conn.execute(
-                "DELETE FROM invite_keys WHERE engram_id = $1", engram_id
-            )
+            await conn.execute("DELETE FROM invite_keys WHERE engram_id = $1", engram_id)
             await conn.execute(
                 "DELETE FROM conflicts WHERE fact_a_id IN "
                 "(SELECT id FROM facts WHERE workspace_id = $1)",
                 engram_id,
             )
-            await conn.execute(
-                "DELETE FROM facts WHERE workspace_id = $1", engram_id
-            )
-            await conn.execute(
-                "DELETE FROM workspaces WHERE engram_id = $1", engram_id
-            )
+            await conn.execute("DELETE FROM facts WHERE workspace_id = $1", engram_id)
+            await conn.execute("DELETE FROM workspaces WHERE engram_id = $1", engram_id)
 
     async def insert_invite_key(
         self,

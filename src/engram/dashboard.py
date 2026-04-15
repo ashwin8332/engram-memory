@@ -339,15 +339,15 @@ def build_dashboard_routes(storage: Storage, engine: Any = None) -> list[Route]:
         if ws is None:
             return HTMLResponse("No workspace configured.", status_code=400)
         if not ws.is_creator:
-            return HTMLResponse("Only the workspace creator can delete the workspace.", status_code=403)
+            return HTMLResponse(
+                "Only the workspace creator can delete the workspace.", status_code=403
+            )
 
         try:
             if ws.db_url:
                 from engram.postgres_storage import PostgresStorage
 
-                pg = PostgresStorage(
-                    db_url=ws.db_url, workspace_id=ws.engram_id, schema=ws.schema
-                )
+                pg = PostgresStorage(db_url=ws.db_url, workspace_id=ws.engram_id, schema=ws.schema)
                 await pg.connect()
                 await pg.delete_workspace(ws.engram_id)
                 await pg.close()
