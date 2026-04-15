@@ -1268,7 +1268,6 @@ def _render_settings(workspace_info: dict | None) -> str:
         invite_keys_html = "<p style='color:#6b7280;'>No invite keys found.</p>"
 
     display_name = workspace_info.get("display_name", "")
-    description = workspace_info.get("description", "")
     rename_error = workspace_info.get("rename_error", "")
     rename_success = workspace_info.get("rename_success", False)
 
@@ -1293,7 +1292,7 @@ def _render_settings(workspace_info: dict | None) -> str:
     is_creator = workspace_info.get("is_creator", False)
     delete_section = ""
     if is_creator:
-        delete_section = f"""
+        delete_section = """
     <div style="margin-bottom:2rem;padding:1rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;">
         <h3 style="font-size:1rem;color:#dc2626;margin-bottom:0.75rem;">Danger Zone</h3>
         <p style="font-size:0.85rem;color:#991b1b;margin-bottom:1rem;">Deleting your workspace will permanently remove all facts, conflicts, and history. This cannot be undone.</p>
