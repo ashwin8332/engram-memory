@@ -332,8 +332,37 @@ def build_dashboard_routes(storage: Storage, engine: Any = None) -> list[Route]:
 
         return HTMLResponse(_render_settings(workspace_info))
 
+    async def delete_workspace_route(request: Request) -> Response:
+        from engram.workspace import clear_workspace_config, read_workspace
+
+        ws = read_workspace()
+        if ws is None:
+            return HTMLResponse("No workspace configured.", status_code=400)
+        if not ws.is_creator:
+            return HTMLResponse("Only the workspace creator can delete the workspace.", status_code=403)
+
+        try:
+            if ws.db_url:
+                from engram.postgres_storage import PostgresStorage
+
+                pg = PostgresStorage(
+                    db_url=ws.db_url, workspace_id=ws.engram_id, schema=ws.schema
+                )
+                await pg.connect()
+                await pg.delete_workspace(ws.engram_id)
+                await pg.close()
+            else:
+                await storage.delete_workspace(ws.engram_id)
+            clear_workspace_config()
+        except Exception as exc:
+            logger.error("Failed to delete workspace: %s", exc)
+            return HTMLResponse(f"Error deleting workspace: {_esc(str(exc))}", status_code=500)
+
+        from starlette.responses import RedirectResponse
+
+        return RedirectResponse("/dashboard/settings", status_code=303)
+
     return [
-        Route("/", landing, methods=["GET"]),
         Route("/dashboard", index, methods=["GET"]),
         Route("/dashboard/facts", knowledge_base, methods=["GET"]),
         Route("/dashboard/facts/{fact_id}", fact_detail, methods=["GET"]),
@@ -346,6 +375,8 @@ def build_dashboard_routes(storage: Storage, engine: Any = None) -> list[Route]:
         Route("/dashboard/expiring", expiring_view, methods=["GET"]),
         Route("/dashboard/settings", settings_view, methods=["GET"]),
         Route("/dashboard/settings/rename", rename_workspace, methods=["POST"]),
+        Route("/dashboard/settings/delete", delete_workspace_route, methods=["POST"]),
+        Route("/", landing, methods=["GET"]),
     ]
 
 
@@ -1259,36 +1290,37 @@ def _render_settings(workspace_info: dict | None) -> str:
         {rename_feedback}
     </div>"""
 
+    is_creator = workspace_info.get("is_creator", False)
+    delete_section = ""
+    if is_creator:
+        delete_section = f"""
+    <div style="margin-bottom:2rem;padding:1rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;">
+        <h3 style="font-size:1rem;color:#dc2626;margin-bottom:0.75rem;">Danger Zone</h3>
+        <p style="font-size:0.85rem;color:#991b1b;margin-bottom:1rem;">Deleting your workspace will permanently remove all facts, conflicts, and history. This cannot be undone.</p>
+        <form method="post" action="/dashboard/settings/delete"
+              onsubmit="return confirm('Delete this workspace and all its data? This cannot be undone.');">
+            <button type="submit" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;
+                    padding:0.4rem 1rem;border-radius:4px;cursor:pointer;">
+                Delete Workspace
+            </button>
+        </form>
+    </div>"""
+
     body = f"""
     <h2>Workspace Settings</h2>
 
     {name_section}
 
     <div style="margin-bottom:2rem;">
-        <h3 style="font-size:1rem;color:#374151;margin-bottom:0.5rem;">Description</h3>
-        <code style="background:#f3f4f6;padding:0.5rem;border-radius:4px;">{_esc(description) or "(not set)"}</code>
-    </div>
-    
-    <div style="margin-bottom:2rem;">
-        <h3 style="font-size:1rem;color:#374151;margin-bottom:0.5rem;">Display Name</h3>
-        <code style="background:#f3f4f6;padding:0.5rem;border-radius:4px;">{_esc(display_name) or "(not set)"}</code>
-    </div>
-    
-    <div style="margin-bottom:2rem;">
-        <h3 style="font-size:1rem;color:#374151;margin-bottom:0.5rem;">Description</h3>
-        <code style="background:#f3f4f6;padding:0.5rem;border-radius:4px;">{_esc(description) or "(not set)"}</code>
-    </div>
-    
-    <div style="margin-bottom:2rem;">
         <h3 style="font-size:1rem;color:#374151;margin-bottom:0.5rem;">Workspace ID</h3>
         <code style="background:#f3f4f6;padding:0.5rem;border-radius:4px;">{engram_id}</code>
     </div>
-    
+
     <div style="margin-bottom:2rem;">
         <h3 style="font-size:1rem;color:#374151;margin-bottom:0.5rem;">Database Schema</h3>
         <code style="background:#f3f4f6;padding:0.5rem;border-radius:4px;">{schema}</code>
     </div>
-    
+
     <div style="margin-bottom:2rem;padding:1rem;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;">
         <h3 style="font-size:1rem;color:#374151;margin-bottom:0.75rem;">Privacy Settings</h3>
         <div style="display:flex;flex-direction:column;gap:0.5rem;">
@@ -1303,18 +1335,14 @@ def _render_settings(workspace_info: dict | None) -> str:
         </div>
         <p style="font-size:0.85rem;color:#6b7280;margin-top:0.5rem;">Settings can only be changed via CLI.</p>
     </div>
-    
+
     <div style="margin-bottom:2rem;">
         <h3 style="font-size:1rem;color:#374151;margin-bottom:0.75rem;">Invite Keys</h3>
         <p style="font-size:0.85rem;color:#6b7280;margin-bottom:1rem;">Share these keys with teammates to join your workspace.</p>
         <div class="table-wrap">{invite_keys_html}</div>
     </div>
-    
-    <div style="margin-bottom:2rem;padding:1rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;">
-        <h3 style="font-size:1rem;color:#dc2626;margin-bottom:0.75rem;">⚠ Danger Zone</h3>
-        <p style="font-size:0.85rem;color:#991b1b;margin-bottom:1rem;">Deleting your workspace will remove all facts, conflicts, and history. This cannot be undone.</p>
-        <button class="btn-dismiss" style="background:#fee2e2;color:#dc2626;border-color:#fecaca;">Delete Workspace</button>
-    </div>"""
+
+    {delete_section}"""
 
     return _dash_layout("Settings", body, active="settings", workspace_name=_get_workspace_name())
 

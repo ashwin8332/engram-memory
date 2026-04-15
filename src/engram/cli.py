@@ -856,7 +856,7 @@ async def _serve(
             import uvicorn
             from starlette.routing import Mount
 
-            dashboard_routes = build_dashboard_routes(storage)
+            dashboard_routes = build_dashboard_routes(storage, engine=engine)
             federation_routes = build_federation_routes(storage)
             rest_routes = build_rest_routes(
                 engine=engine,
@@ -866,10 +866,12 @@ async def _serve(
             )
             mcp_app = mcp.streamable_http_app()
 
-            # Add routes to MCP app
+            # Add routes to MCP app.
+            # Dashboard routes include their full /dashboard/* paths — add them
+            # directly to avoid double-prefixing from a Mount("/dashboard").
             mcp_app.router.routes.extend(
                 [
-                    Mount("/dashboard", routes=dashboard_routes),
+                    *dashboard_routes,
                     Mount("/api/federation", routes=federation_routes),
                     *rest_routes,
                 ]

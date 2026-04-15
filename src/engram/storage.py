@@ -296,6 +296,9 @@ class BaseStorage(ABC):
     async def update_workspace_display_name(self, engram_id: str, display_name: str) -> None:
         """Update the display name for a workspace. Default no-op for local mode."""
 
+    async def delete_workspace(self, engram_id: str) -> None:
+        """Delete a workspace and all associated facts, conflicts, and invite keys. Default no-op."""
+
     async def insert_invite_key(
         self,
         key_hash: str,
@@ -1690,6 +1693,16 @@ class SQLiteStorage(BaseStorage):
             "UPDATE workspaces SET display_name = ? WHERE engram_id = ?",
             (display_name, engram_id),
         )
+        await self.db.commit()
+
+    async def delete_workspace(self, engram_id: str) -> None:
+        await self.db.execute("DELETE FROM invite_keys WHERE engram_id = ?", (engram_id,))
+        await self.db.execute(
+            "DELETE FROM conflicts WHERE fact_a_id IN (SELECT id FROM facts WHERE workspace_id = ?)",
+            (engram_id,),
+        )
+        await self.db.execute("DELETE FROM facts WHERE workspace_id = ?", (engram_id,))
+        await self.db.execute("DELETE FROM workspaces WHERE engram_id = ?", (engram_id,))
         await self.db.commit()
 
     async def insert_invite_key(

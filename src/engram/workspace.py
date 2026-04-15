@@ -71,6 +71,12 @@ def write_workspace(config: WorkspaceConfig) -> None:
     WORKSPACE_PATH.chmod(0o600)
 
 
+def clear_workspace_config() -> None:
+    """Remove the local workspace config file, effectively de-linking from the workspace."""
+    if WORKSPACE_PATH.exists():
+        WORKSPACE_PATH.unlink()
+
+
 EDITABLE_CONFIG_KEYS = {"anonymous_mode", "anon_agents", "display_name", "description"}
 
 
