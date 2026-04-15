@@ -1104,6 +1104,78 @@ class PostgresStorage(BaseStorage):
             )
         return [_row_to_dict(r) for r in rows]
 
+    # ── Memory compression methods ─────────────────────────────────────
+
+    async def insert_fact_archive(self, archive: dict[str, Any]) -> None:
+        async with self.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO fact_archives(id, lineage_id, workspace_id, content, first_commit, last_commit, version_count, created_at)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8)""",
+                archive["id"],
+                archive["lineage_id"],
+                archive.get("workspace_id", self.workspace_id),
+                archive["content"],
+                archive["first_commit"],
+                archive["last_commit"],
+                archive["version_count"],
+                _now_ts(),
+            )
+
+    async def get_fact_archive(self, lineage_id: str) -> dict | None:
+        async with self.acquire() as conn:
+            row = await conn.fetchrow(
+                """SELECT * FROM fact_archives WHERE lineage_id = $1 AND workspace_id = $2
+                   ORDER BY created_at DESC LIMIT 1""",
+                lineage_id,
+                self.workspace_id,
+            )
+        return _row_to_dict(row) if row else None
+
+    async def get_fact_archives_by_lineage(self, lineage_id: str) -> list[dict]:
+        async with self.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT * FROM fact_archives WHERE lineage_id = $1 AND workspace_id = $2
+                   ORDER BY created_at DESC""",
+                lineage_id,
+                self.workspace_id,
+            )
+        return [_row_to_dict(r) for r in rows]
+
+    async def delete_fact_archive(self, archive_id: str) -> bool:
+        async with self.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM fact_archives WHERE id = $1 AND workspace_id = $2",
+                archive_id,
+                self.workspace_id,
+            )
+        return "DELETE 1" in result
+
+    async def get_lineages_needing_compression(self, threshold: int = 10) -> list[dict]:
+        async with self.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT lineage_id, COUNT(*) as version_count, MIN(committed_at) as first_commit,
+                          MAX(committed_at) as last_commit
+                   FROM facts
+                   WHERE workspace_id = $1 AND valid_until IS NOT NULL
+                   GROUP BY lineage_id
+                   HAVING COUNT(*) > $2
+                   ORDER BY version_count DESC""",
+                self.workspace_id,
+                threshold,
+            )
+        return [_row_to_dict(r) for r in rows]
+
+    async def mark_facts_archived(self, fact_ids: list[str]) -> None:
+        if not fact_ids:
+            return
+        async with self.acquire() as conn:
+            for fact_id in fact_ids:
+                await conn.execute(
+                    "UPDATE facts SET valid_until = $1 WHERE id = $2",
+                    _now_ts(),
+                    fact_id,
+                )
+
 
 # ── Helpers ──────────────────────────────────────────────────────────
 

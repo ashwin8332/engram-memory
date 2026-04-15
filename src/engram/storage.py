@@ -368,6 +368,26 @@ class BaseStorage(ABC):
         limit: int = 100,
     ) -> list[dict]: ...
 
+    # ── Memory compression methods ─────────────────────────────────────
+
+    @abstractmethod
+    async def insert_fact_archive(self, archive: dict[str, Any]) -> None: ...
+
+    @abstractmethod
+    async def get_fact_archive(self, lineage_id: str) -> dict | None: ...
+
+    @abstractmethod
+    async def get_fact_archives_by_lineage(self, lineage_id: str) -> list[dict]: ...
+
+    @abstractmethod
+    async def delete_fact_archive(self, archive_id: str) -> bool: ...
+
+    @abstractmethod
+    async def get_lineages_needing_compression(self, threshold: int = 10) -> list[dict]: ...
+
+    @abstractmethod
+    async def mark_facts_archived(self, fact_ids: list[str]) -> None: ...
+
 
 class SQLiteStorage(BaseStorage):
     """Async SQLite storage with WAL mode and FTS5."""
@@ -1708,6 +1728,75 @@ class SQLiteStorage(BaseStorage):
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
+
+    # ── Memory compression methods ─────────────────────────────────────
+
+    async def insert_fact_archive(self, archive: dict[str, Any]) -> None:
+        await self.db.execute(
+            """INSERT INTO fact_archives(id, lineage_id, workspace_id, content, first_commit, last_commit, version_count, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                archive["id"],
+                archive["lineage_id"],
+                archive.get("workspace_id", self.workspace_id),
+                archive["content"],
+                archive["first_commit"],
+                archive["last_commit"],
+                archive["version_count"],
+                archive["created_at"],
+            ),
+        )
+        await self.db.commit()
+
+    async def get_fact_archive(self, lineage_id: str) -> dict | None:
+        cursor = await self.db.execute(
+            """SELECT * FROM fact_archives WHERE lineage_id = ? AND workspace_id = ?
+               ORDER BY created_at DESC LIMIT 1""",
+            (lineage_id, self.workspace_id),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def get_fact_archives_by_lineage(self, lineage_id: str) -> list[dict]:
+        cursor = await self.db.execute(
+            """SELECT * FROM fact_archives WHERE lineage_id = ? AND workspace_id = ?
+               ORDER BY created_at DESC""",
+            (lineage_id, self.workspace_id),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    async def delete_fact_archive(self, archive_id: str) -> bool:
+        cursor = await self.db.execute(
+            "DELETE FROM fact_archives WHERE id = ? AND workspace_id = ?",
+            (archive_id, self.workspace_id),
+        )
+        await self.db.commit()
+        return cursor.rowcount > 0
+
+    async def get_lineages_needing_compression(self, threshold: int = 10) -> list[dict]:
+        cursor = await self.db.execute(
+            """SELECT lineage_id, COUNT(*) as version_count, MIN(committed_at) as first_commit,
+                      MAX(committed_at) as last_commit
+               FROM facts
+               WHERE workspace_id = ? AND valid_until IS NOT NULL
+               GROUP BY lineage_id
+               HAVING COUNT(*) > ?
+               ORDER BY version_count DESC""",
+            (self.workspace_id, threshold),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    async def mark_facts_archived(self, fact_ids: list[str]) -> None:
+        if not fact_ids:
+            return
+        placeholders = ",".join("?" * len(fact_ids))
+        await self.db.execute(
+            f"UPDATE facts SET valid_until = ? WHERE id IN ({placeholders})",
+            [_now_iso()] + fact_ids,
+        )
+        await self.db.commit()
 
 
 def _now_iso() -> str:

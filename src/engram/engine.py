@@ -2340,6 +2340,225 @@ class EngramEngine:
             limit=limit,
         )
 
+    # ── Memory compression ────────────────────────────────────────────
+
+    async def compress_lineage(
+        self,
+        lineage_id: str,
+        threshold: int = 10,
+    ) -> dict[str, Any]:
+        """Compress a lineage chain if it exceeds the version threshold.
+
+        When a fact has been superseded many times, the lineage becomes noisy
+        and expensive to store. This method:
+        1. Archives all superseded facts in the lineage
+        2. Creates a compressed summary fact
+        3. Returns archive metadata for restore capability
+
+        Args:
+            lineage_id: The lineage to compress.
+            threshold: Minimum versions before compression (default 10).
+
+        Returns:
+            {compressed: True, archive_id, version_count, lineage_id}
+        """
+        facts = await self.storage.get_facts_by_lineage(lineage_id)
+        if not facts:
+            raise ValueError(f"Lineage '{lineage_id}' not found.")
+
+        superseded = [f for f in facts if f.get("valid_until") is not None]
+        if len(superseded) <= threshold:
+            return {
+                "compressed": False,
+                "reason": f"Only {len(superseded)} superseded versions (threshold: {threshold})",
+                "lineage_id": lineage_id,
+            }
+
+        archive_id = uuid.uuid4().hex
+        now = datetime.now(timezone.utc).isoformat()
+        first_commit = min(f.get("committed_at", now) for f in superseded)
+        last_commit = max(f.get("committed_at", now) for f in superseded)
+
+        archive_content_parts = []
+        for f in reversed(superseded):
+            committed = f.get("committed_at", "unknown")
+            content = f.get("content", "")
+            archive_content_parts.append(f"[{committed}] {content}")
+
+        archive_content = "\n---\n".join(archive_content_parts)
+
+        archive = {
+            "id": archive_id,
+            "lineage_id": lineage_id,
+            "content": archive_content,
+            "first_commit": first_commit,
+            "last_commit": last_commit,
+            "version_count": len(superseded),
+            "created_at": now,
+        }
+
+        await self.storage.insert_fact_archive(archive)
+
+        superseded_ids = [f["id"] for f in superseded]
+        await self.storage.mark_facts_archived(superseded_ids)
+
+        await self._audit(
+            "compress",
+            extra=json.dumps(
+                {
+                    "lineage_id": lineage_id,
+                    "version_count": len(superseded),
+                    "archive_id": archive_id,
+                }
+            ),
+        )
+
+        logger.info(
+            "Compressed lineage %s: %d versions -> archive %s",
+            lineage_id[:12],
+            len(superseded),
+            archive_id[:12],
+        )
+
+        return {
+            "compressed": True,
+            "archive_id": archive_id,
+            "version_count": len(superseded),
+            "lineage_id": lineage_id,
+            "first_commit": first_commit,
+            "last_commit": last_commit,
+        }
+
+    async def get_archive(self, lineage_id: str) -> dict | None:
+        """Retrieve the archive for a lineage chain.
+
+        Args:
+            lineage_id: The lineage to look up.
+
+        Returns:
+            Archive dict with version_count, content, timestamps, or None if not archived.
+        """
+        return await self.storage.get_fact_archive(lineage_id)
+
+    async def get_archive_history(self, lineage_id: str) -> list[dict]:
+        """Retrieve all archives for a lineage chain (if compressed multiple times)."""
+        return await self.storage.get_fact_archives_by_lineage(lineage_id)
+
+    async def restore_from_archive(self, lineage_id: str) -> dict[str, Any]:
+        """Restore a compressed lineage to full fact history.
+
+        Recreates individual facts from the archive content. This reverses
+        compression by unpacking the archived timeline back into fact rows.
+
+        Args:
+            lineage_id: The lineage to restore.
+
+        Returns:
+            {restored: True, fact_count, lineage_id}
+        """
+        archive = await self.storage.get_fact_archive(lineage_id)
+        if not archive:
+            raise ValueError(f"No archive found for lineage '{lineage_id}'.")
+
+        archive_content = archive.get("content", "")
+        if not archive_content:
+            raise ValueError(f"Archive for lineage '{lineage_id}' has empty content.")
+
+        restored_count = 0
+        lines = archive_content.split("\n---\n")
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            if line.startswith("["):
+                bracket_end = line.index("]")
+                timestamp_str = line[1:bracket_end]
+                content = line[bracket_end + 2 :].strip()
+            else:
+                timestamp_str = archive.get("first_commit", datetime.now(timezone.utc).isoformat())
+                content = line
+
+            if not content:
+                continue
+
+            content_hash = _content_hash(content)
+            existing = await self.storage.find_duplicate(content_hash, "restored")
+            if existing:
+                continue
+
+            fact_id = uuid.uuid4().hex
+            emb = embeddings.encode(content)
+            emb_bytes = embeddings.embedding_to_bytes(emb)
+            keywords = extract_keywords(content)
+            entities = extract_entities(content)
+
+            fact = {
+                "id": fact_id,
+                "lineage_id": lineage_id,
+                "content": content,
+                "content_hash": content_hash,
+                "scope": "restored",
+                "confidence": 0.8,
+                "fact_type": "observation",
+                "agent_id": "archive-restorer",
+                "engineer": None,
+                "provenance": f"Restored from archive {archive['id'][:12]}",
+                "keywords": json.dumps(keywords),
+                "entities": json.dumps(entities),
+                "artifact_hash": None,
+                "embedding": emb_bytes,
+                "embedding_model": embeddings.get_model_name(),
+                "embedding_ver": embeddings.get_model_version(),
+                "committed_at": timestamp_str,
+                "valid_from": timestamp_str,
+                "valid_until": None,
+                "ttl_days": None,
+                "memory_op": "add",
+                "supersedes_fact_id": None,
+                "durability": "durable",
+            }
+
+            await self.storage.insert_fact(fact)
+            restored_count += 1
+
+        await self.storage.delete_fact_archive(archive["id"])
+
+        await self._audit(
+            "restore",
+            extra=json.dumps(
+                {
+                    "lineage_id": lineage_id,
+                    "fact_count": restored_count,
+                    "archive_id": archive["id"],
+                }
+            ),
+        )
+
+        logger.info(
+            "Restored lineage %s from archive: %d facts",
+            lineage_id[:12],
+            restored_count,
+        )
+
+        return {
+            "restored": True,
+            "fact_count": restored_count,
+            "lineage_id": lineage_id,
+        }
+
+    async def get_compression_candidates(self, threshold: int = 10) -> list[dict]:
+        """Return lineages that need compression.
+
+        Args:
+            threshold: Minimum superseded versions to qualify.
+
+        Returns:
+            List of {lineage_id, version_count, first_commit, last_commit}
+        """
+        return await self.storage.get_lineages_needing_compression(threshold)
+
 
 def _content_hash(content: str) -> str:
     """SHA-256 of lowercased, whitespace-normalized content."""

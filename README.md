@@ -2,15 +2,28 @@
 
 # Engram
 
-**Shared memory for your team's agents**
+**Shared memory for AI agent teams**
 
-Persistent memory that survives across sessions and detects when agents contradict each other.
+Engram is a memory layer for teams running multiple AI agents in parallel. It persists discoveries across sessions, detects when agents contradict each other, and stops context fragmentation before it costs you hours.
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](./LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-compatible-8b5cf6?style=flat-square)](https://modelcontextprotocol.io)
 [![Python](https://img.shields.io/badge/python-3.11+-3776ab?style=flat-square)](https://python.org)
 
 </div>
+
+---
+
+## Best Fit For
+
+Engram is built for teams who:
+
+- **Run multiple agents in parallel** — Multiple agents touching the same codebase need a shared source of truth
+- **Work with long-lived context** — When session history grows stale or gets dropped, institutional knowledge disappears
+- **Care about consistency** — Catch contradictions early instead of shipping conflicting changes and discovering it in review
+- **Need auditability** — Track what was decided, when, and why — not just what changed in the code
+
+**Not the right fit?** Engram isn't designed for single-agent workflows or projects with one-off, disposable context.
 
 ---
 
@@ -136,7 +149,7 @@ Watch this quick demo to get started with Engram:
 
 ---
 
-## How It Works
+## Why Teams Use Engram
 
 ```
 ┌──────────────────────────────────────────┐

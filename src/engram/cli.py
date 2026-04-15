@@ -1534,5 +1534,141 @@ def completion(shell: str | None) -> None:
     click.echo(f"Restart your shell or run: source {config_path}")
 
 
+# ── engram compress ───────────────────────────────────────────────────
+
+
+@main.command()
+@click.option("--lineage-id", required=True, help="Lineage ID to compress.")
+@click.option("--threshold", default=10, type=int, help="Version threshold (default: 10).")
+def compress(lineage_id: str, threshold: int) -> None:
+    """Compress a lineage chain if it exceeds the version threshold.
+
+    Memory compression squashes long lineage chains into a single archive entry,
+    reducing storage and query cost while preserving full history for restore.
+
+    Examples:
+        engram compress --lineage-id abc123
+        engram compress --lineage-id abc123 --threshold 15
+    """
+    import os
+
+    from engram.engine import EngramEngine
+
+    db_url = os.environ.get("ENGRAM_DB_URL", "")
+    workspace_id = "local"
+
+    try:
+        from engram.workspace import read_workspace
+
+        ws = read_workspace()
+        if ws and ws.db_url:
+            db_url = ws.db_url
+            workspace_id = ws.engram_id
+    except Exception:
+        pass
+
+    if db_url:
+        from engram.postgres_storage import PostgresStorage
+
+        storage = PostgresStorage(db_url=db_url, workspace_id=workspace_id)
+    else:
+        from engram.storage import SQLiteStorage, DEFAULT_DB_PATH
+
+        storage = SQLiteStorage(db_path=str(DEFAULT_DB_PATH))
+
+    async def run_compress():
+        await storage.connect()
+        try:
+            engine = EngramEngine(storage)
+            result = await engine.compress_lineage(lineage_id, threshold=threshold)
+            if result.get("compressed"):
+                click.echo(f"✓ Compressed lineage {lineage_id[:12]}...")
+                click.echo(f"  Archive ID: {result.get('archive_id')}")
+                click.echo(f"  Versions archived: {result.get('version_count')}")
+            else:
+                click.echo(f"○ Not compressed: {result.get('reason')}")
+        finally:
+            await storage.close()
+
+    asyncio.run(run_compress())
+
+
+# ── engram archive ─────────────────────────────────────────────────────
+
+
+@main.command()
+@click.option("--lineage-id", required=True, help="Lineage ID to view archive for.")
+@click.option("--restore", is_flag=True, help="Restore lineage from archive.")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+def archive(lineage_id: str, restore: bool, as_json: bool) -> None:
+    """View or restore archived lineage history.
+
+    Examples:
+        engram archive --lineage-id abc123
+        engram archive --lineage-id abc123 --restore
+        engram archive --lineage-id abc123 --json
+    """
+    import os
+
+    from engram.engine import EngramEngine
+
+    db_url = os.environ.get("ENGRAM_DB_URL", "")
+    workspace_id = "local"
+
+    try:
+        from engram.workspace import read_workspace
+
+        ws = read_workspace()
+        if ws and ws.db_url:
+            db_url = ws.db_url
+            workspace_id = ws.engram_id
+    except Exception:
+        pass
+
+    if db_url:
+        from engram.postgres_storage import PostgresStorage
+
+        storage = PostgresStorage(db_url=db_url, workspace_id=workspace_id)
+    else:
+        from engram.storage import SQLiteStorage, DEFAULT_DB_PATH
+
+        storage = SQLiteStorage(db_path=str(DEFAULT_DB_PATH))
+
+    async def run_archive():
+        await storage.connect()
+        try:
+            engine = EngramEngine(storage)
+
+            if restore:
+                result = await engine.restore_from_archive(lineage_id)
+                click.echo(f"✓ Restored lineage {lineage_id[:12]}...")
+                click.echo(f"  Facts restored: {result.get('fact_count')}")
+            else:
+                archive_data = await engine.get_archive(lineage_id)
+                if not archive_data:
+                    click.echo(f"No archive found for lineage {lineage_id}")
+                    return
+
+                if as_json:
+                    click.echo(json.dumps(archive_data, indent=2))
+                else:
+                    click.echo(f"=== Archive for {lineage_id[:12]}... ===")
+                    click.echo(f"Archive ID: {archive_data.get('id')}")
+                    click.echo(f"Version count: {archive_data.get('version_count')}")
+                    click.echo(f"First commit: {archive_data.get('first_commit')}")
+                    click.echo(f"Last commit: {archive_data.get('last_commit')}")
+                    click.echo(f"\nArchived content:")
+                    click.echo("-" * 40)
+                    click.echo(archive_data.get("content", ""))
+                    click.echo("-" * 40)
+                    click.echo(
+                        "\nTo restore: engram archive --lineage-id " + lineage_id + " --restore"
+                    )
+        finally:
+            await storage.close()
+
+    asyncio.run(run_archive())
+
+
 if __name__ == "__main__":
     main()
