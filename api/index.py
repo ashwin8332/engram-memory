@@ -14,8 +14,8 @@ def _render_landing() -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Engram — Shared memory for your team's agents</title>
-  <meta name="description" content="Shared memory for your team's agents. Works with any MCP-compatible IDE. Zero setup. All data encrypted, never shared, always yours.">
+  <title>Engram — The Conflict &amp; Liability Platform for Agents</title>
+  <meta name="description" content="Engram is a shared memory ledger for your team. When one agent learns a fact, every other agent knows it instantly. If they contradict each other, Engram catches it before they break your code.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" onload="this.onload=null;this.rel='stylesheet'">
@@ -593,10 +593,9 @@ def _render_landing() -> str:
 <section class="hero">
   <div class="container">
     <div class="hero-badge"><span class="hero-badge-dot"></span>MCP-compatible · Open source</div>
-    <h1>Shared memory for<br>your team's agents</h1>
+    <h1>The Conflict &amp; Liability Platform for Agents.</h1>
     <p class="subtitle">
-      One agent discovers something. Every other agent knows it instantly.
-      Encrypted, private, and never shared. One command to install.
+      Engram is a shared memory ledger for your team. When one agent learns a fact, every other agent knows it instantly. If they contradict each other, Engram catches it before they break your code — transforming agent actions into a verifiable audit trail that connects agent actions to human liability.
     </p>
     <a href="#install" class="hero-cta">
       Get started
