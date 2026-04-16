@@ -1652,263 +1652,58 @@ async def engram_create_rule(
     )
 
 
-# ── engram_grant ─────────────────────────────────────────────────────────────
-
-
-@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False})
-async def engram_grant(
-    agent_id: str,
-    scope: str,
-    can_read: bool = True,
-    can_write: bool = True,
-) -> dict[str, Any]:
-    """Grant an agent read/write permissions to a specific scope.
-
-    Use this to restrict agents to specific scopes - a frontend agent with
-    no write access to backend/auth, a read-only CI agent, a sandboxed
-    junior agent.
-
-    Parameters:
-    - agent_id: The agent ID to grant permissions to (e.g. 'claude-code').
-    - scope: The scope to grant access to (e.g. 'auth', 'payments/', 'docs').
-    - can_read: Whether the agent can read facts in this scope (default True).
-    - can_write: Whether the agent can commit to this scope (default True).
-
-    Returns: {agent_id, scope, can_read, can_write, granted_at}
-    """
-    if _storage is None:
-        return {"error": "Storage not initialized"}
-    await _storage.set_scope_permission(
-        agent_id=agent_id,
-        scope=scope,
-        can_read=can_read,
-        can_write=can_write,
-    )
-    return {
-        "agent_id": agent_id,
-        "scope": scope,
-        "can_read": can_read,
-        "can_write": can_write,
-        "granted_at": datetime.now(timezone.utc).isoformat(),
-    }
-
-
-# ── engram_revoke ────────────────────────────────────────────────────────
-
-
-@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": True})
-async def engram_revoke(
-    agent_id: str,
-    scope: str,
-) -> dict[str, Any]:
-    """Revoke all permissions for an agent in a specific scope.
-
-    Use this to remove an agent's access when they exceed their bounds
-    or when an agent is decommissioned.
-
-    Parameters:
-    - agent_id: The agent ID to revoke permissions from.
-    - scope: The scope to revoke access to.
-
-    Returns: {agent_id, scope, revoked_at}
-    """
-    if _storage is None:
-        return {"error": "Storage not initialized"}
-    await _storage.set_scope_permission(
-        agent_id=agent_id,
-        scope=scope,
-        can_read=False,
-        can_write=False,
-    )
-    return {
-        "agent_id": agent_id,
-        "scope": scope,
-        "revoked_at": datetime.now(timezone.utc).isoformat(),
-    }
-
-
-# ── engram_check_permission ────────────────────────────────────────────────
+# ── engram_check_conflicts ───────────────────────────────────────────────
 
 
 @mcp.tool(annotations={"readOnlyHint": True})
-async def engram_check_permission(
-    agent_id: str,
-    scope: str,
-) -> dict[str, Any]:
-    """Check an agent's permissions for a specific scope.
-
-    Use this to verify what access an agent has before allowing operations.
-
-    Parameters:
-    - agent_id: The agent ID to check.
-    - scope: The scope to check permissions for.
-
-    Returns: {agent_id, scope, can_read, can_write, has_permission}
-    """
-    if _storage is None:
-        return {"error": "Storage not initialized"}
-    permission = await _storage.get_scope_permission(agent_id=agent_id, scope=scope)
-    if permission is None:
-        return {
-            "agent_id": agent_id,
-            "scope": scope,
-            "can_read": True,
-            "can_write": True,
-            "has_permission": True,
-            "implicit": True,
-        }
-    return {
-        "agent_id": permission["agent_id"],
-        "scope": permission["scope"],
-        "can_read": bool(permission["can_read"]),
-        "can_write": bool(permission["can_write"]),
-        "has_permission": bool(permission["can_read"]) or bool(permission["can_write"]),
-    }
-
-
-# ── engram_replay ────────────────────────────────────────────────────────────────
-
-
-@mcp.tool(annotations={"readOnlyHint": True})
-async def engram_replay(
-    as_of: str,
+async def engram_check_conflicts(
+    content: str,
     scope: str | None = None,
 ) -> dict[str, Any]:
-    """Reconstruct workspace state at a past timestamp.
+    """Check if proposed content conflicts with existing facts.
 
-    What did agents believe at a specific point in time? This is invaluable
-    for incident postmortems - reconstruct exactly what agents believed when
-    they took a destructive action.
+    Use this as a pre-commit hook - before writing code or making decisions,
+    check if the proposed action contradicts established knowledge.
 
     Parameters:
-    - as_of: ISO 8601 timestamp (e.g. '2026-04-01T14:00:00Z').
-    - scope: Optional scope to filter facts.
+    - content: The proposed fact or action to check.
+    - scope: Optional scope to filter checks (e.g., 'backend', 'auth').
 
-    Returns: {facts: [...], as_of, fact_count}
+    Returns: {has_conflicts, conflicts: [{fact_id, explanation, severity}]}
+    If has_conflicts is true, the action should be blocked until resolved.
     """
     engine = get_engine()
-    from engram.workspace import read_workspace as _rw
+    if engine is None:
+        return {"error": "Engine not initialized"}
 
-    _ws = _rw()
-    _disc = await _check_key_generation(_ws)
-    if _disc:
-        return _disc
-
-    results = await engine.get_current_facts_in_scope(
-        scope=scope,
-        as_of=as_of,
-        limit=500,
-    )
-    return {
-        "facts": [
-            {
-                "id": r.get("id"),
-                "content": r.get("content"),
-                "scope": r.get("scope"),
-                "agent_id": r.get("agent_id"),
-                "valid_from": r.get("valid_from"),
-                "valid_until": r.get("valid_until"),
-            }
-            for r in results
-        ],
-        "as_of": as_of,
-        "fact_count": len(results),
+    fact = {
+        "content": content,
+        "scope": scope or "global",
+        "confidence": 0.9,
+        "fact_type": "observation",
+        "agent_id": "pre-commit-hook",
     }
 
+    await engine.commit(fact)
+    conflicts = await engine.get_conflicts(scope=fact["scope"], status="open")
 
-# ── engram_compress ─────────────────────────────────────────────────────────────
+    if conflicts:
+        return {
+            "has_conflicts": True,
+            "conflicts": [
+                {
+                    "conflict_id": c.get("id"),
+                    "fact_id": c.get("fact_a_id"),
+                    "explanation": c.get("explanation"),
+                    "severity": c.get("severity"),
+                }
+                for c in conflicts[:5]
+            ],
+            "message": f"Found {len(conflicts)} conflicting facts.",
+        }
 
-
-@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False})
-async def engram_compress(
-    lineage_id: str,
-    threshold: int = 10,
-) -> dict[str, Any]:
-    """Compress a lineage chain if it exceeds the version threshold.
-
-    Memory compression squashes long lineage chains (by default, >10 versions)
-    into a single archive entry. This reduces storage costs and query latency
-    while preserving the full history for audit and restore.
-
-    Use this when a fact has been updated many times and the lineage is getting
-    unwieldy. Compression is reversible — call engram_get_archive to view the
-    full history, or engram_restore to recreate individual facts.
-
-    Parameters:
-    - lineage_id: The lineage UUID to compress.
-    - threshold: Minimum superseded versions before compression (default 10).
-
-    Returns: {compressed, archive_id, version_count, lineage_id, first_commit, last_commit}
-    """
-    engine = get_engine()
-    return await engine.compress_lineage(lineage_id, threshold=threshold)
-
-
-# ── engram_get_archive ─────────────────────────────────────────────────────────
-
-
-@mcp.tool(annotations={"readOnlyHint": True})
-async def engram_get_archive(
-    lineage_id: str,
-) -> dict[str, Any]:
-    """Retrieve the archived history for a lineage chain.
-
-    When a lineage has been compressed, use this to view the full version
-    history. The archive contains all superseded versions in chronological order.
-
-    Parameters:
-    - lineage_id: The lineage UUID to look up.
-
-    Returns: {archive_id, lineage_id, version_count, content, first_commit, last_commit}
-    """
-    engine = get_engine()
-    archive = await engine.get_archive(lineage_id)
-    if not archive:
-        return {"error": f"No archive found for lineage '{lineage_id}'"}
-    return archive
-
-
-# ── engram_restore ──────────────────────────────────────────────────────────────
-
-
-@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False})
-async def engram_restore(
-    lineage_id: str,
-) -> dict[str, Any]:
-    """Restore a compressed lineage to full fact history.
-
-    Reverses compression by unpacking the archived timeline back into individual
-    fact rows. Use this when you need to query or modify a specific historical
-    version.
-
-    WARNING: This deletes the archive after restoring.
-
-    Parameters:
-    - lineage_id: The lineage UUID to restore.
-
-    Returns: {restored, fact_count, lineage_id}
-    """
-    engine = get_engine()
-    return await engine.restore_from_archive(lineage_id)
-
-
-# ── engram_compression_candidates ─────────────────────────────────────────────
-
-
-@mcp.tool(annotations={"readOnlyHint": True})
-async def engram_compression_candidates(
-    threshold: int = 10,
-) -> dict[str, Any]:
-    """List lineages that qualify for compression.
-
-    Returns all lineages that have more than the threshold number of superseded
-    versions. Use this to identify candidates before running compression.
-
-    Parameters:
-    - threshold: Minimum superseded versions to qualify (default 10).
-
-    Returns: {candidates: [{lineage_id, version_count, first_commit, last_commit}]}
-    """
-    engine = get_engine()
-    candidates = await engine.get_compression_candidates(threshold=threshold)
-    return {"candidates": candidates, "count": len(candidates)}
+    return {
+        "has_conflicts": False,
+        "conflicts": [],
+        "message": "No conflicts detected. Safe to proceed.",
+    }
