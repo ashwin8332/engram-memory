@@ -8,7 +8,12 @@ import pytest
 from click.testing import CliRunner
 
 from engram.cli import main
-from engram.importer import chunk_document, discover_import_files, import_documents, prepare_import_fact
+from engram.importer import (
+    chunk_document,
+    discover_import_files,
+    import_documents,
+    prepare_import_fact,
+)
 from engram.storage import SQLiteStorage
 
 
