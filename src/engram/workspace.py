@@ -26,7 +26,7 @@ WORKSPACE_PATH = Path.home() / ".engram" / "workspace.json"
 @dataclass
 class WorkspaceConfig:
     engram_id: str
-    db_url: str
+    db_url: str = ""
     schema: str = "engram"
     anonymous_mode: bool = False
     anon_agents: bool = False

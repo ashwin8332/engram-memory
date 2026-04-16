@@ -846,6 +846,201 @@ def stats(output_json: bool) -> None:
         click.echo(f"Error: {e}", err=True)
 
 
+# ── engram promote ───────────────────────────────────────────────────
+
+
+@main.command()
+@click.argument("fact_id", required=False)
+@click.option("--list", "list_ephemeral", is_flag=True, help="List all ephemeral facts.")
+def promote(fact_id: str | None, list_ephemeral: bool) -> None:
+    """Promote ephemeral facts to durable.
+
+    When an ephemeral fact has proven valuable, promote it to durable
+    to make it visible in default queries and enable conflict detection.
+
+    Examples:
+        engram promote ABC123            # Promote specific fact
+        engram promote --list            # List all ephemeral facts
+    """
+    import asyncio
+    import os
+    from engram.workspace import read_workspace
+    from engram.engine import EngramEngine
+    from engram.storage import SQLiteStorage, DEFAULT_DB_PATH
+
+    ws = read_workspace()
+    if not ws:
+        click.echo("Error: No workspace configured. Run 'engram init' or 'engram join' first.")
+        return
+
+    db_url = os.environ.get("ENGRAM_DB_URL", "")
+    if db_url:
+        from engram.postgres_storage import PostgresStorage
+
+        storage = PostgresStorage(db_url=db_url, workspace_id=ws.engram_id, schema=ws.schema)
+    else:
+        storage = SQLiteStorage(db_path=str(DEFAULT_DB_PATH), workspace_id=ws.engram_id)
+
+    engine = EngramEngine(storage)
+
+    async def run_promote():
+        await storage.connect()
+        if list_ephemeral:
+            facts = await storage.get_facts_by_durability("ephemeral")
+            if not facts:
+                click.echo("No ephemeral facts found.")
+                return
+            click.echo("=== Ephemeral Facts ===")
+            for f in facts:
+                committed = f.get("committed_at", "unknown")[:19]
+                click.echo(f"  {f['id'][:12]} | {f['scope']} | {committed}")
+                click.echo(f"    {f['content'][:80]}...")
+            click.echo(f"\nTotal: {len(facts)} ephemeral facts")
+            return
+
+        if not fact_id:
+            click.echo("Error: Provide a fact_id or use --list")
+            click.echo("Usage: engram promote <fact_id>")
+            return
+
+        try:
+            result = await engine.promote(fact_id)
+            click.echo(f"✓ Promoted fact {fact_id[:12]} to durable")
+            click.echo(f"  Fact ID: {result['fact_id']}")
+            click.echo(f"  Durability: {result['durability']}")
+        except ValueError as e:
+            click.echo(f"Error: {e}", err=True)
+        finally:
+            await storage.close()
+
+    asyncio.run(run_promote())
+
+
+# ── engram webhook ───────────────────────────────────────────────────
+
+
+@main.command()
+@click.option("--url", required=True, help="Webhook URL to register.")
+@click.option("--events", default="conflict.detected", help="Comma-separated events.")
+@click.option("--secret", default=None, help="Optional secret for HMAC.")
+def webhook(url: str, events: str, secret: str | None) -> None:
+    """Register a webhook for event notifications.
+
+    Example:
+        engram webhook --url https://example.com/hook --events conflict.detected
+    """
+    import asyncio
+    import os
+    from engram.workspace import read_workspace
+    from engram.engine import EngramEngine
+    from engram.storage import SQLiteStorage, DEFAULT_DB_PATH
+
+    ws = read_workspace()
+    if not ws:
+        click.echo("Error: No workspace configured.")
+        return
+
+    db_url = os.environ.get("ENGRAM_DB_URL", "")
+    if db_url:
+        from engram.postgres_storage import PostgresStorage
+
+        storage = PostgresStorage(db_url=db_url, workspace_id=ws.engram_id, schema=ws.schema)
+    else:
+        storage = SQLiteStorage(db_path=str(DEFAULT_DB_PATH), workspace_id=ws.engram_id)
+
+    engine = EngramEngine(storage)
+    events_list = [e.strip() for e in events.split(",")]
+
+    async def run_webhook():
+        await storage.connect()
+        try:
+            result = await engine.create_webhook(url=url, events=events_list, secret=secret)
+            click.echo(f"✓ Webhook registered: {result['webhook_id']}")
+        except Exception as e:
+            click.echo(f"Error: {e}", err=True)
+        finally:
+            await storage.close()
+
+    asyncio.run(run_webhook())
+
+
+@main.command("webhook:list")
+def webhook_list() -> None:
+    """List all registered webhooks."""
+    import asyncio
+    import os
+    from engram.workspace import read_workspace
+    from engram.engine import EngramEngine
+    from engram.storage import SQLiteStorage, DEFAULT_DB_PATH
+
+    ws = read_workspace()
+    if not ws:
+        click.echo("Error: No workspace configured.")
+        return
+
+    db_url = os.environ.get("ENGRAM_DB_URL", "")
+    if db_url:
+        from engram.postgres_storage import PostgresStorage
+
+        storage = PostgresStorage(db_url=db_url, workspace_id=ws.engram_id, schema=ws.schema)
+    else:
+        storage = SQLiteStorage(db_path=str(DEFAULT_DB_PATH), workspace_id=ws.engram_id)
+
+    engine = EngramEngine(storage)
+
+    async def run_list():
+        await storage.connect()
+        try:
+            webhooks = await engine.list_webhooks()
+            if not webhooks:
+                click.echo("No webhooks registered.")
+                return
+            for wh in webhooks:
+                click.echo(f"  {wh['webhook_id']}: {wh['url']}")
+        finally:
+            await storage.close()
+
+    asyncio.run(run_list())
+
+
+@main.command("webhook:delete")
+@click.argument("webhook_id")
+def webhook_delete(webhook_id: str) -> None:
+    """Delete a registered webhook."""
+    import asyncio
+    import os
+    from engram.workspace import read_workspace
+    from engram.engine import EngramEngine
+    from engram.storage import SQLiteStorage, DEFAULT_DB_PATH
+
+    ws = read_workspace()
+    if not ws:
+        click.echo("Error: No workspace configured.")
+        return
+
+    db_url = os.environ.get("ENGRAM_DB_URL", "")
+    if db_url:
+        from engram.postgres_storage import PostgresStorage
+
+        storage = PostgresStorage(db_url=db_url, workspace_id=ws.engram_id, schema=ws.schema)
+    else:
+        storage = SQLiteStorage(db_path=str(DEFAULT_DB_PATH), workspace_id=ws.engram_id)
+
+    engine = EngramEngine(storage)
+
+    async def run_delete():
+        await storage.connect()
+        try:
+            await engine.delete_webhook(webhook_id)
+            click.echo(f"✓ Webhook {webhook_id} deleted")
+        except ValueError as e:
+            click.echo(f"Error: {e}", err=True)
+        finally:
+            await storage.close()
+
+    asyncio.run(run_delete())
+
+
 # ── engram whoami ───────────────────────────────────────────────────────────
 
 
