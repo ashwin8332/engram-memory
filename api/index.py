@@ -595,7 +595,7 @@ def _render_landing() -> str:
     <div class="hero-badge"><span class="hero-badge-dot"></span>MCP-compatible · Open source</div>
     <h1>The Conflict &amp; Liability Platform for Agents.</h1>
     <p class="subtitle">
-      Engram is a shared memory ledger for your team. When one agent learns a fact, every other agent knows it instantly. If they contradict each other, Engram catches it before they break your code — transforming agent actions into a verifiable audit trail that connects agent actions to human liability.
+      Engram is "Git for AI memory." It syncs knowledge across agents instantly and flags logic conflicts before they ship. By anchoring every decision to a verified fact, it creates a permanent audit trail that connects agent output to human responsibility.
     </p>
     <a href="#install" class="hero-cta">
       Get started
