@@ -83,7 +83,9 @@ def test_conflicts_lists_open_conflicts_as_json(monkeypatch, tmp_path):
     assert isinstance(data, list)
     assert len(data) >= 1
     assert data[0]["conflict_id"].startswith(conflict_id[:8])
-    assert "60 seconds" in data[0]["fact_a"]["content"] or "60 seconds" in data[0]["fact_b"]["content"]
+    assert (
+        "60 seconds" in data[0]["fact_a"]["content"] or "60 seconds" in data[0]["fact_b"]["content"]
+    )
 
 
 def test_conflicts_json_flag_outputs_valid_json(monkeypatch, tmp_path):

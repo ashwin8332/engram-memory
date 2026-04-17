@@ -2942,9 +2942,7 @@ def _run_conflicts_tui(scope: str | None, status: str) -> None:
             console.print(f"[red]Error:[/red] {exc}")
             return
 
-        sorted_rows = sorted(
-            rows, key=lambda c: _SEVERITY_ORDER.get(c.get("severity") or "low", 3)
-        )
+        sorted_rows = sorted(rows, key=lambda c: _SEVERITY_ORDER.get(c.get("severity") or "low", 3))
 
         # ── header ────────────────────────────────────────────────────
         console.print()
@@ -2964,9 +2962,9 @@ def _run_conflicts_tui(scope: str | None, status: str) -> None:
             a = (c.get("fact_a") or {}).get("content") or ""
             b = (c.get("fact_b") or {}).get("content") or ""
             if len(a) > _MAX:
-                a = a[:_MAX - 1] + "\u2026"
+                a = a[: _MAX - 1] + "\u2026"
             if len(b) > _MAX:
-                b = b[:_MAX - 1] + "\u2026"
+                b = b[: _MAX - 1] + "\u2026"
             dot = {"critical": "\u25cf", "high": "\u25c6", "medium": "\u25c8", "low": "\u00b7"}.get(
                 sev, "\u00b7"
             )
@@ -3036,8 +3034,10 @@ def _run_conflicts_tui(scope: str | None, status: str) -> None:
             continue
 
         # ── execute ───────────────────────────────────────────────────
-        resolution_type = "dismissed" if resolution_choice == "D" else (
-            "merge" if resolution_choice == "M" else "winner"
+        resolution_type = (
+            "dismissed"
+            if resolution_choice == "D"
+            else ("merge" if resolution_choice == "M" else "winner")
         )
         winning_claim_id: str | None = None
         if resolution_choice == "A":
@@ -3083,7 +3083,9 @@ def _run_conflicts_tui(scope: str | None, status: str) -> None:
     help="Filter conflicts by status.",
 )
 @click.option("--scope", default=None, help="Optional scope prefix to filter conflicts.")
-@click.option("--json", "as_json", is_flag=True, help="Print raw JSON for piping (non-interactive).")
+@click.option(
+    "--json", "as_json", is_flag=True, help="Print raw JSON for piping (non-interactive)."
+)
 def conflicts(ctx: click.Context, status: str, scope: str | None, as_json: bool) -> None:
     """View and resolve memory conflicts from the terminal.
 
@@ -3122,6 +3124,7 @@ def conflicts(ctx: click.Context, status: str, scope: str | None, as_json: bool)
 
     # ── scripting / pipe mode ─────────────────────────────────────────
     if as_json or not sys.stdout.isatty():
+
         async def _run() -> list[dict]:
             engine, storage = await _conflicts_engine_ctx()
             try:
