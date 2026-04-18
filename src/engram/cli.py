@@ -3010,7 +3010,9 @@ def export_cmd(format: str, output: str | None, scope: str | None) -> None:
     default=None,
     help="Server URL for the source workspace (defaults to current server).",
 )
-@click.option("--dry-run", is_flag=True, help="Preview what would be merged without making changes.")
+@click.option(
+    "--dry-run", is_flag=True, help="Preview what would be merged without making changes."
+)
 @click.option("--scope", default=None, help="Only merge facts matching this scope prefix.")
 def merge_workspaces(
     source_key: str,
@@ -3050,7 +3052,9 @@ def merge_workspaces(
     tgt_key = target_key or current_invite_key
 
     if not tgt_key:
-        click.echo("Error: No target invite key. Pass --target-key or configure your workspace.", err=True)
+        click.echo(
+            "Error: No target invite key. Pass --target-key or configure your workspace.", err=True
+        )
         return
 
     # ── fetch durable facts from source ──────────────────────────────────────
@@ -3120,7 +3124,9 @@ def merge_workspaces(
         except Exception:
             skipped += 1
 
-    click.echo(f"Merge complete: {merged} fact(s) imported, {skipped} skipped (duplicates or errors).")
+    click.echo(
+        f"Merge complete: {merged} fact(s) imported, {skipped} skipped (duplicates or errors)."
+    )
 
 
 # ── engram conflicts ────────────────────────────────────────────────────────
