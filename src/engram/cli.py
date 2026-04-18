@@ -67,7 +67,12 @@ def main(ctx: click.Context) -> None:
         return
 
     # Connected — show a compact status summary
-    mode = "team (PostgreSQL)" if (ws and ws.db_url) else "local (SQLite)"
+    if ws and ws.server_url and not ws.db_url:
+        mode = "hosted"
+    elif ws and ws.db_url:
+        mode = "team (PostgreSQL)"
+    else:
+        mode = "local (SQLite)"
     workspace_id = (ws.engram_id if ws else os.environ.get("ENGRAM_DB_URL", "")[:24]) or "-"
     click.echo(f"Engram  connected  [{mode}]  {workspace_id}")
     click.echo()
@@ -1650,37 +1655,38 @@ def status() -> None:
     - Anonymous mode settings
     - Schema info
     """
-    import os
-    from engram.workspace import read_workspace, WORKSPACE_PATH
+    from engram.workspace import read_workspace
 
     ws = read_workspace()
 
-    if not ws and not WORKSPACE_PATH.exists():
-        db_url = os.environ.get("ENGRAM_DB_URL", "")
-        if not db_url:
-            click.echo("=== Engram Status ===")
-            click.echo("Status: Not configured")
-            click.echo("\nTo get started:")
-            click.echo("  1. Set ENGRAM_DB_URL (or use engram join <invite-key>)")
-            click.echo("  2. Run: engram setup")
-            return
-
-    ws = read_workspace()
     if not ws:
-        click.echo("Error: Invalid workspace configuration")
+        click.echo("=== Engram Status ===")
+        click.echo("Status: Not configured")
+        click.echo("\nTo get started:")
+        click.echo("  1. Set ENGRAM_DB_URL (or use engram join <invite-key>)")
+        click.echo("  2. Run: engram setup")
         return
 
-    mode = "Team (PostgreSQL)" if ws.db_url else "Local (SQLite)"
+    if ws.server_url and not ws.db_url:
+        mode = "Hosted"
+    elif ws.db_url:
+        mode = "Team (PostgreSQL)"
+    else:
+        mode = "Local (SQLite)"
+
     click.echo("=== Engram Status ===")
     click.echo(f"Workspace ID: {ws.engram_id}")
     click.echo(f"Mode: {mode}")
+    if ws.server_url:
+        click.echo(f"Server: {ws.server_url}")
     click.echo(f"Anonymous Mode: {'Enabled' if ws.anonymous_mode else 'Disabled'}")
     click.echo(f"Anon Agents: {'Enabled' if ws.anon_agents else 'Disabled'}")
 
     if ws.display_name:
         click.echo(f"Display Name: {ws.display_name}")
 
-    click.echo(f"\nSchema: {ws.schema}")
+    if not ws.server_url:
+        click.echo(f"\nSchema: {ws.schema}")
 
 
 # ── engram stats ───────────────────────────────────────────────────────────

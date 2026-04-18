@@ -23,6 +23,9 @@ from typing import Any
 WORKSPACE_PATH = Path.home() / ".engram" / "workspace.json"
 
 
+_CREDENTIALS_PATH = Path.home() / ".engram" / "credentials"
+
+
 @dataclass
 class WorkspaceConfig:
     engram_id: str
@@ -34,6 +37,7 @@ class WorkspaceConfig:
     is_creator: bool = False
     display_name: str = ""
     description: str = ""
+    server_url: str = ""
 
 
 def read_workspace() -> WorkspaceConfig | None:
@@ -42,16 +46,16 @@ def read_workspace() -> WorkspaceConfig | None:
         try:
             data = json.loads(WORKSPACE_PATH.read_text())
             # Backward compatibility: add fields if missing
-            if "schema" not in data:
-                data["schema"] = "engram"
-            if "key_generation" not in data:
-                data["key_generation"] = 0
-            if "is_creator" not in data:
-                data["is_creator"] = False
-            if "display_name" not in data:
-                data["display_name"] = ""
-            if "description" not in data:
-                data["description"] = ""
+            defaults = {
+                "schema": "engram",
+                "key_generation": 0,
+                "is_creator": False,
+                "display_name": "",
+                "description": "",
+                "server_url": "",
+            }
+            for key, val in defaults.items():
+                data.setdefault(key, val)
             return WorkspaceConfig(**data)
         except Exception:
             return None
@@ -61,7 +65,35 @@ def read_workspace() -> WorkspaceConfig | None:
     schema = os.environ.get("ENGRAM_SCHEMA", "engram")
     if db_url:
         return WorkspaceConfig(engram_id="local", db_url=db_url, schema=schema)
-    return None
+
+    # Fall back to ~/.engram/credentials (hosted/cloud users whose invite key
+    # has no embedded db_url, so _join_workspace never writes workspace.json)
+    return _read_credentials_as_workspace()
+
+
+def _read_credentials_as_workspace() -> WorkspaceConfig | None:
+    """Parse ~/.engram/credentials and return a hosted WorkspaceConfig, or None."""
+    if not _CREDENTIALS_PATH.exists():
+        return None
+    creds: dict[str, str] = {}
+    for line in _CREDENTIALS_PATH.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, _, v = line.partition("=")
+            creds[k.strip()] = v.strip()
+    server_url = creds.get("ENGRAM_SERVER_URL", "")
+    invite_key = creds.get("ENGRAM_INVITE_KEY", "")
+    if not server_url and not invite_key:
+        return None
+    # Try to extract engram_id from the invite key payload
+    engram_id = "hosted"
+    if invite_key:
+        try:
+            payload = decode_invite_key(invite_key)
+            engram_id = payload.get("engram_id", "hosted") or "hosted"
+        except Exception:
+            pass
+    return WorkspaceConfig(engram_id=engram_id, server_url=server_url)
 
 
 def write_workspace(config: WorkspaceConfig) -> None:
@@ -151,7 +183,11 @@ def set_workspace_setting(key: str, raw_value: str) -> WorkspaceConfig:
 
 def is_configured() -> bool:
     """Return True if a workspace config exists or ENGRAM_DB_URL is set."""
-    return WORKSPACE_PATH.exists() or bool(os.environ.get("ENGRAM_DB_URL"))
+    return (
+        WORKSPACE_PATH.exists()
+        or bool(os.environ.get("ENGRAM_DB_URL"))
+        or _CREDENTIALS_PATH.exists()
+    )
 
 
 def is_team_mode() -> bool:
