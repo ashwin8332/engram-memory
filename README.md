@@ -4,8 +4,6 @@
 
 **Active memory for your AI agents — outlasting sessions, never sleeping**
 
-Most agent errors aren't disagreements between agents. They're disagreements between the agent and code. Engram verifies what agents believe exist and what the code actually says.
-
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](./LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-compatible-8b5cf6?style=flat-square)](https://modelcontextprotocol.io)
 [![Python](https://img.shields.io/badge/python-3.11+-3776ab?style=flat-square)](https://python.org)
