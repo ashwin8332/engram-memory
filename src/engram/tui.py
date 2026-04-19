@@ -157,27 +157,58 @@ def _server_url(ws: Any) -> str:
     return _LOCAL_SERVER
 
 
+def _is_hosted(ws: Any) -> bool:
+    """Return True when connected to a remote hosted server (not localhost)."""
+    base = _server_url(ws)
+    return not base.startswith("http://localhost") and not base.startswith("http://127.")
+
+
+def _mcp_call(ws: Any, tool: str, arguments: dict[str, Any]) -> Any | None:
+    """Call an MCP tool via JSON-RPC POST to <server>/mcp.  Returns the result or None."""
+    base = _server_url(ws)
+    auth: dict[str, str] = {}
+    if getattr(ws, "invite_key", ""):
+        auth["Authorization"] = f"Bearer {ws.invite_key}"
+    auth["Accept"] = "application/json, text/event-stream"
+    body = {
+        "jsonrpc": "2.0",
+        "id": "1",
+        "method": "tools/call",
+        "params": {"name": tool, "arguments": arguments},
+    }
+    status, data = _http_post(f"{base}/mcp", body, timeout=10, headers=auth)
+    if status != 200:
+        return None
+    # MCP responses wrap the result in data.result.content[0].text (JSON string)
+    try:
+        content = data.get("result", {}).get("content", [])
+        if content:
+            return json.loads(content[0].get("text", "{}"))
+    except Exception:
+        pass
+    return data.get("result")
+
+
 # ── OpenAI chat proxied through Engram server ─────────────────────────
 
 
 def _commit_user_message(ws: Any, message: str) -> None:
     """Commit the user's typed message as an Engram fact."""
+    args = {
+        "content": message,
+        "agent_id": "tui-user",
+        "scope": "global",
+        "confidence": 0.9,
+        "fact_type": "observation",
+    }
+    if _is_hosted(ws):
+        _mcp_call(ws, "engram_commit", args)
+        return
     base = _server_url(ws)
     auth: dict[str, str] = {}
     if getattr(ws, "invite_key", ""):
         auth["Authorization"] = f"Bearer {ws.invite_key}"
-    _http_post(
-        f"{base}/api/commit",
-        {
-            "content": message,
-            "agent_id": "tui-user",
-            "scope": "global",
-            "confidence": 0.9,
-            "fact_type": "observation",
-        },
-        timeout=8,
-        headers=auth,
-    )
+    _http_post(f"{base}/api/commit", args, timeout=8, headers=auth)
 
 
 def _openai_chat(ws: Any, message: str, output_lines: list[tuple[str, str]]) -> None:
@@ -262,6 +293,19 @@ def _format_conflicts(conflicts: list[dict[str, Any]]) -> list[tuple[str, str]]:
 def _load_conflicts(ws: Any, output_lines: list[tuple[str, str]]) -> None:
     """Fetch open conflicts from the server and append formatted output."""
     base = _server_url(ws)
+
+    if _is_hosted(ws):
+        result = _mcp_call(ws, "engram_conflicts", {"status": "open"})
+        if result is None:
+            output_lines.append(("class:output.error", f"  Could not reach server at {base}\n"))
+            output_lines.append(
+                ("class:output.dim", "  Check your invite key or internet connection.\n")
+            )
+            return
+        conflicts = result.get("conflicts", result) if isinstance(result, dict) else result
+        output_lines.extend(_format_conflicts(conflicts if isinstance(conflicts, list) else []))
+        return
+
     auth_headers: dict[str, str] = {}
     if ws and getattr(ws, "invite_key", ""):
         auth_headers["Authorization"] = f"Bearer {ws.invite_key}"
