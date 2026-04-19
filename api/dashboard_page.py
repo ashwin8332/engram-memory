@@ -356,13 +356,12 @@ def _render_dashboard() -> str:
       background: rgba(239,68,68,0.07); border: 1px solid rgba(239,68,68,0.2); color: var(--red);
       cursor: pointer; font-family: inherit; transition: background 0.2s; }
     .ws-delete-btn:hover { background: rgba(239,68,68,0.15); }
-    .ws-delete-corner { position: absolute; top: 12px; right: 12px; width: 26px; height: 26px;
-      border-radius: 6px; background: transparent; border: 1px solid transparent;
-      color: var(--tm); cursor: pointer; font-size: 15px; line-height: 1;
+    .ws-delete-corner { position: absolute; top: 12px; right: 12px; width: 28px; height: 28px;
+      border-radius: 7px; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2);
+      color: var(--red); cursor: pointer; line-height: 1;
       display: flex; align-items: center; justify-content: center;
-      transition: background 0.15s, color 0.15s, border-color 0.15s; z-index: 2; }
-    .ws-delete-corner:hover { background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.3);
-      color: var(--red); }
+      transition: background 0.15s, border-color 0.15s; z-index: 2; }
+    .ws-delete-corner:hover { background: rgba(239,68,68,0.2); border-color: rgba(239,68,68,0.4); }
 
     /* ── WORKSPACE DETAIL ───────────────────────────────────────── */
     #ws-detail-screen { display: none; }
@@ -1180,7 +1179,11 @@ function renderWsGrid(workspaces) {
     const wsName = ws.display_name ? esc(ws.display_name) : '';
     return `<div class="ws-card ${isPaused ? 'paused' : ''}">
       <button class="ws-delete-corner" title="Delete workspace"
-        onclick="event.stopPropagation();openDeleteModal('${wsId}', '${wsName || wsId}')">✕</button>
+        onclick="event.stopPropagation();openDeleteModal('${wsId}', '${wsName || wsId}')">
+        <svg width="13" height="14" viewBox="0 0 13 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M1 3.5h11M4.5 3.5V2.5a1 1 0 011-1h2a1 1 0 011 1v1M5.5 6.5v4M7.5 6.5v4M2 3.5l.7 7.5a1 1 0 001 .9h5.6a1 1 0 001-.9L11 3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
       <div onclick="openWorkspace('${wsId}')" style="cursor:pointer">
         ${wsName
           ? `<div class="ws-name" style="padding-right:28px;">${wsName}</div><div class="ws-id">${wsId}</div>`
