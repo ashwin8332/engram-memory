@@ -214,7 +214,22 @@ def _commit_user_message(ws: Any, message: str) -> None:
 def _openai_chat(ws: Any, message: str, output_lines: list[tuple[str, str]]) -> None:
     """Send message to the server /api/chat endpoint (server holds the API key)."""
     if _is_hosted(ws):
-        output_lines.append(("class:output.dim", "  ✓ Saved to memory.\n"))
+        result = _mcp_call(ws, "engram_query", {"topic": message, "limit": 5})
+        output_lines.append(("class:output.dim", "\n"))
+        if result and isinstance(result, dict):
+            facts = result.get("facts", [])
+            if facts:
+                output_lines.append(("class:output.dim", "  From memory:\n"))
+                for f in facts:
+                    content = (f.get("content") or "")[:120]
+                    output_lines.append(("class:output", f"  · {content}\n"))
+            else:
+                output_lines.append(
+                    ("class:output.dim", "  ✓ Saved to memory. Nothing relevant found yet.\n")
+                )
+        else:
+            output_lines.append(("class:output.dim", "  ✓ Saved to memory.\n"))
+        output_lines.append(("class:output.dim", "\n"))
         return
 
     base = _server_url(ws)
@@ -285,6 +300,7 @@ def _format_conflicts(conflicts: list[dict[str, Any]]) -> list[tuple[str, str]]:
         if fb_content:
             scope_tag = f" ({fb_scope})" if fb_scope else ""
             lines.append(("class:output.dim", f"      B{scope_tag}: {fb_content}\n"))
+        lines.append(("class:output.dim", f"      resolve {short} keep_a  /  keep_b  /  dismiss\n"))
         lines.append(("class:output.dim", "\n"))
 
     return lines
@@ -645,8 +661,6 @@ def run_tui(ws: Any, ctx: Any) -> None:
 
             for filepath in changed:
                 _spin(4)
-                output_lines.append(("class:output.dim", f"  ↳ {filepath}\n"))
-                a.invalidate()
                 full_path = os.path.join(os.getcwd(), filepath)
                 if not os.path.isfile(full_path):
                     continue
@@ -656,20 +670,20 @@ def run_tui(ws: Any, ctx: Any) -> None:
                     first_lines = " · ".join(
                         ln.strip() for ln in preview.splitlines()[:4] if ln.strip()
                     )[:200]
-                    _commit_fact(f"{filepath}: {first_lines}")
+                    if _commit_fact(f"{filepath}: {first_lines}"):
+                        output_lines.append(("class:output.dim", f"  ↳ {filepath}\n"))
+                        a.invalidate()
                 except Exception:
                     pass
 
             _spin(5)
             state["scanning"] = False
-            noun = "fact" if facts_committed == 1 else "facts"
-            output_lines.append(
-                (
-                    "class:output.dim",
-                    f"  ✓ Scan complete — {facts_committed} {noun} committed.\n",
+            if facts_committed > 0:
+                noun = "fact" if facts_committed == 1 else "facts"
+                output_lines.append(
+                    ("class:output.dim", f"  ✓ {facts_committed} {noun} saved to memory.\n")
                 )
-            )
-            a.invalidate()
+                a.invalidate()
 
         threading.Thread(target=_trigger_scan, args=(app,), daemon=True).start()
 
