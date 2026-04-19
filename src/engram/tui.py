@@ -25,6 +25,9 @@ from prompt_toolkit.styles import Style
 
 _VERSION = "0.1.1"
 
+_SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+_CATEGORIES = ["About you", "About the codebase", "Goals"]
+
 _STYLE = Style.from_dict(
     {
         "header.title": "bold noinherit #ffffff",
@@ -360,7 +363,12 @@ def run_tui(ws: Any, ctx: Any) -> None:
         cwd = os.getcwd()
 
     # Mutable state
-    state: dict[str, Any] = {}
+    state: dict[str, Any] = {
+        "selected_category": 0,
+        "scanning": False,
+        "scan_paused": False,
+        "scan_frame": 0,
+    }
     output_lines: list[tuple[str, str]] = []
 
     # ── formatted text producers ──────────────────────────────────────────
@@ -408,11 +416,27 @@ def run_tui(ws: Any, ctx: Any) -> None:
         return [("class:separator", "─" * 200)]
 
     def output_text() -> AnyFormattedText:
-        return list(output_lines)
+        result = list(output_lines)
+        if state["scanning"]:
+            frame = _SPINNER[state["scan_frame"] % len(_SPINNER)]
+            result.append(("class:output.dim", f"\n  {frame} Scanning codebase...\n"))
+        return result
 
     def output_cursor_pos() -> Point:
         total = sum(t.count("\n") for _, t in output_lines)
         return Point(x=0, y=max(0, total - 1))
+
+    def question_text() -> AnyFormattedText:
+        return [("class:output.dim", "  Tell me something your agents should always remember")]
+
+    def tabs_text() -> AnyFormattedText:
+        parts: list[tuple[str, str]] = [("class:output.dim", "  ")]
+        for i, name in enumerate(_CATEGORIES):
+            if i > 0:
+                parts.append(("class:output.dim", "  "))
+            style = "class:prompt" if i == state["selected_category"] else "class:output.dim"
+            parts.append((style, f"[ {name} ]"))
+        return parts
 
     def toolbar_text() -> AnyFormattedText:
         if state.get("waiting_for_invite_key"):
@@ -480,8 +504,34 @@ def run_tui(ws: Any, ctx: Any) -> None:
 
         # Auto-commit every message as an Engram fact (in background)
         import threading
+        import time
 
         threading.Thread(target=_commit_user_message, args=(ws, text), daemon=True).start()
+
+        def _trigger_scan(a: Application) -> None:
+            if state["scanning"] or state["scan_paused"]:
+                return
+            base = _server_url(ws)
+            billing = _http_get(
+                f"{base}/billing/status?engram_id={ws.engram_id or ''}", timeout=3
+            )
+            if billing and billing.get("paused"):
+                state["scan_paused"] = True
+                output_lines.append(
+                    ("class:output.warn", "  ⏸ Active scanning paused — upgrade for more active hours.\n")
+                )
+                a.invalidate()
+                return
+            state["scanning"] = True
+            for _ in range(35):
+                time.sleep(0.08)
+                state["scan_frame"] += 1
+                a.invalidate()
+            state["scanning"] = False
+            output_lines.append(("class:output.dim", "  ✓ Codebase scan complete.\n"))
+            a.invalidate()
+
+        threading.Thread(target=_trigger_scan, args=(app,), daemon=True).start()
 
         if cmd == "merge":
             output_lines.append(
@@ -539,6 +589,16 @@ def run_tui(ws: Any, ctx: Any) -> None:
         output_lines.clear()
         event.app.invalidate()
 
+    @kb.add("tab")
+    def _next_cat(event: Any) -> None:
+        state["selected_category"] = (state["selected_category"] + 1) % len(_CATEGORIES)
+        event.app.invalidate()
+
+    @kb.add("s-tab")
+    def _prev_cat(event: Any) -> None:
+        state["selected_category"] = (state["selected_category"] - 1) % len(_CATEGORIES)
+        event.app.invalidate()
+
     @kb.add("c-r")
     def _refresh(event: Any) -> None:
         output_lines.append(("class:output.cmd", "\n  > conflicts\n"))
@@ -575,10 +635,20 @@ def run_tui(ws: Any, ctx: Any) -> None:
                     dont_extend_height=True,
                 ),
                 Window(
+                    FormattedTextControl(question_text, focusable=False),
+                    height=D.exact(1),
+                    dont_extend_height=True,
+                ),
+                Window(
                     BufferControl(
                         buffer=input_buf,
                         input_processors=[BeforeInput("> ", style="class:prompt")],
                     ),
+                    height=D.exact(1),
+                    dont_extend_height=True,
+                ),
+                Window(
+                    FormattedTextControl(tabs_text, focusable=False),
                     height=D.exact(1),
                     dont_extend_height=True,
                 ),
