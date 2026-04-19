@@ -1164,6 +1164,15 @@ class EngramEngine:
         # Fetch same-scope candidates once — used by both numeric and NLI tiers
         candidates = await self.storage.get_current_facts_in_scope(scope=scope, limit=200)
 
+        async def _already_settled(a: dict, b: dict) -> bool:
+            """True if this pair or their lineages already have a resolved/dismissed conflict."""
+            if await self.storage.conflict_exists(a["id"], b["id"]):
+                return True
+            la, lb = a.get("lineage_id"), b.get("lineage_id")
+            if la and lb and la != lb:
+                return await self.storage.lineage_conflict_exists(la, lb)
+            return False
+
         # ── Tier 2: Same-scope numeric entity conflicts ───────────────
         if new_nums:
             for other in candidates:
@@ -1171,7 +1180,7 @@ class EngramEngine:
                     continue
                 if fact.get("lineage_id") and fact.get("lineage_id") == other.get("lineage_id"):
                     continue
-                if await self.storage.conflict_exists(fact_id, other["id"]):
+                if await _already_settled(fact, other):
                     continue
 
                 other_entities = extract_entities(other.get("content") or "")
@@ -1254,7 +1263,7 @@ class EngramEngine:
                     continue
                 if fact.get("lineage_id") and fact.get("lineage_id") == other.get("lineage_id"):
                     continue
-                if await self.storage.conflict_exists(fact_id, other["id"]):
+                if await _already_settled(fact, other):
                     continue
 
                 # Only run NLI on semantically similar pairs (cosine > 0.5)
@@ -1338,7 +1347,7 @@ class EngramEngine:
                         continue
                     if fact.get("lineage_id") and fact.get("lineage_id") == other.get("lineage_id"):
                         continue
-                    if await self.storage.conflict_exists(fact_id, other["id"]):
+                    if await _already_settled(fact, other):
                         continue
 
                     other_entities = extract_entities(other.get("content") or "")

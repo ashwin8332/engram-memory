@@ -559,6 +559,23 @@ class PostgresStorage(BaseStorage):
             row = await conn.fetchrow(query, *params)
         return row is not None
 
+    async def lineage_conflict_exists(self, lineage_a: str, lineage_b: str) -> bool:
+        """Return True if a resolved or dismissed conflict exists between any fact
+        in lineage_a and any fact in lineage_b (prevents re-detection after resolution)."""
+        query = """SELECT 1 FROM conflicts c
+                   JOIN facts fa ON c.fact_a_id = fa.id
+                   JOIN facts fb ON c.fact_b_id = fb.id
+                   WHERE c.workspace_id = $1
+                     AND c.status IN ('resolved', 'dismissed')
+                     AND (
+                       (fa.lineage_id = $2 AND fb.lineage_id = $3)
+                       OR (fa.lineage_id = $3 AND fb.lineage_id = $2)
+                     )
+                   LIMIT 1"""
+        async with self.acquire() as conn:
+            row = await conn.fetchrow(query, self.workspace_id, lineage_a, lineage_b)
+        return row is not None
+
     async def get_conflicts(self, scope: str | None = None, status: str = "open") -> list[dict]:
         conditions = ["c.workspace_id = $1"]
         params: list[Any] = [self.workspace_id]

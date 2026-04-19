@@ -134,6 +134,12 @@ class BaseStorage(ABC):
     ) -> bool: ...
 
     @abstractmethod
+    async def lineage_conflict_exists(self, lineage_a: str, lineage_b: str) -> bool:
+        """Return True if any resolved or dismissed conflict exists between facts
+        in lineage_a and facts in lineage_b (in either direction)."""
+        ...
+
+    @abstractmethod
     async def get_conflicts(self, scope: str | None = None, status: str = "open") -> list[dict]: ...
 
     @abstractmethod
@@ -1057,6 +1063,24 @@ class SQLiteStorage(BaseStorage):
 
         cursor = await self.db.execute(
             f"SELECT 1 FROM conflicts WHERE {' AND '.join(conditions)}", params
+        )
+        return await cursor.fetchone() is not None
+
+    async def lineage_conflict_exists(self, lineage_a: str, lineage_b: str) -> bool:
+        """Return True if a resolved or dismissed conflict exists between any fact
+        in lineage_a and any fact in lineage_b (prevents re-detection after resolution)."""
+        cursor = await self.db.execute(
+            """SELECT 1 FROM conflicts c
+               JOIN facts fa ON c.fact_a_id = fa.id
+               JOIN facts fb ON c.fact_b_id = fb.id
+               WHERE c.workspace_id = ?
+                 AND c.status IN ('resolved', 'dismissed')
+                 AND (
+                   (fa.lineage_id = ? AND fb.lineage_id = ?)
+                   OR (fa.lineage_id = ? AND fb.lineage_id = ?)
+                 )
+               LIMIT 1""",
+            (self.workspace_id, lineage_a, lineage_b, lineage_b, lineage_a),
         )
         return await cursor.fetchone() is not None
 
