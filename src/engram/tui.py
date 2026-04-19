@@ -488,12 +488,11 @@ def run_tui(ws: Any, ctx: Any) -> None:
         return [("class:prompt", "  Tell me something your agents should always remember")]
 
     def tabs_text() -> AnyFormattedText:
-        parts: list[tuple[str, str]] = [("class:output.dim", "  ")]
-        for i, name in enumerate(_CATEGORIES):
-            if i > 0:
-                parts.append(("class:output.dim", "  "))
-            parts.append(("class:output.dim", f"[ {name} ]"))
-        return parts
+        return [
+            ("class:output.dim", "  Resolve conflicts"),
+            ("class:output.dim", "   or tell me   "),
+            ("class:output.dim", "Tell me something your agents should always remember"),
+        ]
 
     def toolbar_text() -> AnyFormattedText:
         if state.get("waiting_for_invite_key"):
