@@ -824,6 +824,9 @@ async def handle_leave_workspace(request: Request) -> JSONResponse:
                         f"DELETE FROM {SCHEMA}.{table} WHERE workspace_id = $1", engram_id
                     )
                 await conn.execute(
+                    f"DELETE FROM {SCHEMA}.invite_keys WHERE engram_id = $1", engram_id
+                )
+                await conn.execute(
                     f"DELETE FROM {SCHEMA}.workspace_keys WHERE engram_id = $1", engram_id
                 )
                 await conn.execute(
@@ -872,6 +875,9 @@ async def handle_delete_account(request: Request) -> JSONResponse:
                         await conn.execute(
                             f"DELETE FROM {SCHEMA}.{table} WHERE workspace_id = $1", eid
                         )
+                    await conn.execute(
+                        f"DELETE FROM {SCHEMA}.invite_keys WHERE engram_id = $1", eid
+                    )
                     await conn.execute(
                         f"DELETE FROM {SCHEMA}.workspace_keys WHERE engram_id = $1", eid
                     )
