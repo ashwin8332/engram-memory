@@ -9,7 +9,8 @@ import time
 import urllib.parse
 from typing import Any
 
-from prompt_toolkit import Application, get_app
+from prompt_toolkit import Application
+from prompt_toolkit.application import get_app
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.cursor_shapes import CursorShape
 from prompt_toolkit.formatted_text import AnyFormattedText
