@@ -607,6 +607,36 @@ def run_tui(ws: Any, ctx: Any) -> None:
             billing = _http_get(f"{base}/billing/status?engram_id={ws.engram_id or ''}", timeout=3)
             if billing and billing.get("paused"):
                 state["scan_paused"] = True
+                # Queue deferred scan so work runs at midnight instead of being dropped
+                try:
+                    from engram.overnight import build_deferred_scan
+                    from engram.storage import SQLiteStorage
+
+                    _scan_record = build_deferred_scan({"context": text[:500]})
+
+                    async def _enqueue() -> None:
+                        _st = SQLiteStorage(workspace_id=getattr(ws, "engram_id", None) or "local")
+                        await _st.connect()
+                        try:
+                            await _st.enqueue_deferred_scan(_scan_record)
+                        finally:
+                            await _st.close()
+
+                    import asyncio as _asyncio
+
+                    try:
+                        _asyncio.get_event_loop().run_until_complete(_enqueue())
+                        output_lines.append(
+                            (
+                                "class:output.dim",
+                                "  ↷ Queued for tonight's analysis (runs at midnight).\n",
+                            )
+                        )
+                    except RuntimeError:
+                        pass
+                except Exception:
+                    pass
+
                 output_lines.append(
                     (
                         "class:output.warn",

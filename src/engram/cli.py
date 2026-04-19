@@ -3823,5 +3823,59 @@ def dismiss(conflict_id: str, note: str | None) -> None:
         raise click.ClickException("Dismiss returned resolved=False — check server logs.")
 
 
+@main.command()
+@click.option("--dry-run", is_flag=True, help="Show pending scans without committing facts.")
+def overnight(dry_run: bool) -> None:
+    """Process deferred thinking scans queued during the day.
+
+    Reads pending scans scheduled for tonight, explores the codebase and
+    existing facts, synthesises insights with an LLM, and commits them to
+    memory. Typically invoked by a cron job at midnight:
+
+        0 0 * * * engram overnight
+
+    Set ANTHROPIC_API_KEY in the environment for LLM synthesis.
+    """
+    from engram.overnight import run_overnight
+    from engram.storage import DEFAULT_DB_PATH, SQLiteStorage
+    from engram.workspace import load_workspace
+
+    async def _run() -> int:
+        ws = load_workspace()
+        db_url = getattr(ws, "db_url", None) or ""
+        if db_url.startswith("postgres"):
+            from engram.postgres_storage import PostgresStorage
+
+            storage = PostgresStorage(db_url, workspace_id=ws.engram_id or "local")
+        else:
+            storage = SQLiteStorage(
+                db_path=db_url.replace("sqlite:///", "") or DEFAULT_DB_PATH,
+                workspace_id=ws.engram_id or "local",
+            )
+        await storage.connect()
+        try:
+            if dry_run:
+                from datetime import datetime, timezone
+
+                now = datetime.now(timezone.utc).isoformat()
+                pending = await storage.get_pending_deferred_scans(before=now)
+                return len(pending)
+            return await run_overnight(storage)
+        finally:
+            await storage.close()
+
+    try:
+        count = asyncio.run(_run())
+    except Exception as exc:
+        raise click.ClickException(str(exc))
+
+    if dry_run:
+        click.echo(f"Dry run: {count} scan(s) pending for tonight.")
+    else:
+        click.echo(
+            click.style("✓", fg="green") + f" Overnight run complete — {count} fact(s) committed."
+        )
+
+
 if __name__ == "__main__":
     main()

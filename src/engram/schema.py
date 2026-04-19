@@ -20,7 +20,7 @@ Two schemas are maintained:
 - POSTGRES_SCHEMA_SQL: PostgreSQL (team mode, asyncpg)
 """
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 # Incremental ALTER TABLE migrations keyed by target version.
 MIGRATIONS: dict[int, list[str]] = {
@@ -208,6 +208,22 @@ MIGRATIONS: dict[int, list[str]] = {
             dismissed_at   TEXT NOT NULL
         )""",
         "CREATE INDEX IF NOT EXISTS idx_dismissed_conflicts_workspace ON dismissed_conflicts(workspace_id)",
+    ],
+    17: [
+        # Overnight deferred thinking: scans queued when active hours are exhausted,
+        # processed at midnight by `engram overnight`.
+        """CREATE TABLE IF NOT EXISTS deferred_scans (
+            id               TEXT PRIMARY KEY,
+            workspace_id     TEXT NOT NULL DEFAULT 'local',
+            queued_at        TEXT NOT NULL,
+            scheduled_for    TEXT NOT NULL,
+            status           TEXT NOT NULL DEFAULT 'pending',
+            payload          TEXT NOT NULL DEFAULT '{}',
+            result_fact_count INTEGER NOT NULL DEFAULT 0,
+            completed_at     TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_deferred_scans_workspace_status ON deferred_scans(workspace_id, status)",
+        "CREATE INDEX IF NOT EXISTS idx_deferred_scans_scheduled ON deferred_scans(scheduled_for, status)",
     ],
 }
 
@@ -510,6 +526,21 @@ CREATE INDEX IF NOT EXISTS idx_tkg_edges_target ON tkg_edges(target_node_id);
 CREATE INDEX IF NOT EXISTS idx_tkg_edges_fact ON tkg_edges(fact_id);
 CREATE INDEX IF NOT EXISTS idx_tkg_edges_active ON tkg_edges(expired_at);
 CREATE INDEX IF NOT EXISTS idx_tkg_edges_scope ON tkg_edges(scope);
+
+-- Overnight deferred thinking queue
+CREATE TABLE IF NOT EXISTS deferred_scans (
+    id               TEXT PRIMARY KEY,
+    workspace_id     TEXT NOT NULL DEFAULT 'local',
+    queued_at        TEXT NOT NULL,
+    scheduled_for    TEXT NOT NULL,
+    status           TEXT NOT NULL DEFAULT 'pending',
+    payload          TEXT NOT NULL DEFAULT '{}',
+    result_fact_count INTEGER NOT NULL DEFAULT 0,
+    completed_at     TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_deferred_scans_workspace_status ON deferred_scans(workspace_id, status);
+CREATE INDEX IF NOT EXISTS idx_deferred_scans_scheduled ON deferred_scans(scheduled_for, status);
 """
 
 # ── Post-migration indexes (SQLite) ─────────────────────────────────
@@ -798,4 +829,19 @@ CREATE INDEX IF NOT EXISTS idx_tkg_edges_target ON tkg_edges(target_node_id);
 CREATE INDEX IF NOT EXISTS idx_tkg_edges_fact ON tkg_edges(fact_id);
 CREATE INDEX IF NOT EXISTS idx_tkg_edges_active ON tkg_edges(expired_at);
 CREATE INDEX IF NOT EXISTS idx_tkg_edges_scope ON tkg_edges(scope);
+
+-- Overnight deferred thinking queue
+CREATE TABLE IF NOT EXISTS deferred_scans (
+    id               TEXT PRIMARY KEY,
+    workspace_id     TEXT NOT NULL DEFAULT 'local',
+    queued_at        TIMESTAMPTZ NOT NULL,
+    scheduled_for    TIMESTAMPTZ NOT NULL,
+    status           TEXT NOT NULL DEFAULT 'pending',
+    payload          JSONB NOT NULL DEFAULT '{}',
+    result_fact_count INTEGER NOT NULL DEFAULT 0,
+    completed_at     TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_deferred_scans_workspace_status ON deferred_scans(workspace_id, status);
+CREATE INDEX IF NOT EXISTS idx_deferred_scans_scheduled ON deferred_scans(scheduled_for, status);
 """

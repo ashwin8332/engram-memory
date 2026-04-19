@@ -521,6 +521,17 @@ class BaseStorage(ABC):
     @abstractmethod
     async def get_all_tkg_nodes(self) -> list[dict]: ...
 
+    @abstractmethod
+    async def enqueue_deferred_scan(self, scan: dict[str, Any]) -> None: ...
+
+    @abstractmethod
+    async def get_pending_deferred_scans(self, before: str) -> list[dict]: ...
+
+    @abstractmethod
+    async def update_deferred_scan_status(
+        self, scan_id: str, status: str, fact_count: int = 0, completed_at: str | None = None
+    ) -> None: ...
+
 
 class SQLiteStorage(BaseStorage):
     """Async SQLite storage with WAL mode and FTS5."""
@@ -2903,6 +2914,41 @@ class SQLiteStorage(BaseStorage):
             (self.workspace_id,),
         )
         return [dict(r) for r in await cur.fetchall()]
+
+    async def enqueue_deferred_scan(self, scan: dict[str, Any]) -> None:
+        await self.db.execute(
+            """INSERT INTO deferred_scans
+               (id, workspace_id, queued_at, scheduled_for, status, payload)
+               VALUES (?, ?, ?, ?, 'pending', ?)""",
+            (
+                scan["id"],
+                self.workspace_id,
+                scan["queued_at"],
+                scan["scheduled_for"],
+                scan.get("payload", "{}"),
+            ),
+        )
+        await self.db.commit()
+
+    async def get_pending_deferred_scans(self, before: str) -> list[dict]:
+        cur = await self.db.execute(
+            """SELECT * FROM deferred_scans
+               WHERE workspace_id = ? AND status = 'pending' AND scheduled_for <= ?
+               ORDER BY scheduled_for""",
+            (self.workspace_id, before),
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+    async def update_deferred_scan_status(
+        self, scan_id: str, status: str, fact_count: int = 0, completed_at: str | None = None
+    ) -> None:
+        await self.db.execute(
+            """UPDATE deferred_scans
+               SET status = ?, result_fact_count = ?, completed_at = ?
+               WHERE id = ?""",
+            (status, fact_count, completed_at, scan_id),
+        )
+        await self.db.commit()
 
 
 def _now_iso() -> str:

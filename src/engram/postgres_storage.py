@@ -2357,6 +2357,44 @@ class PostgresStorage(BaseStorage):
             )
         return [_row_to_dict(r) for r in rows]
 
+    async def enqueue_deferred_scan(self, scan: dict[str, Any]) -> None:
+        async with self.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO deferred_scans
+                   (id, workspace_id, queued_at, scheduled_for, status, payload)
+                   VALUES ($1, $2, $3, $4, 'pending', $5::jsonb)""",
+                scan["id"],
+                self.workspace_id,
+                scan["queued_at"],
+                scan["scheduled_for"],
+                scan.get("payload", "{}"),
+            )
+
+    async def get_pending_deferred_scans(self, before: str) -> list[dict]:
+        async with self.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT * FROM deferred_scans
+                   WHERE workspace_id = $1 AND status = 'pending' AND scheduled_for <= $2
+                   ORDER BY scheduled_for""",
+                self.workspace_id,
+                before,
+            )
+        return [_row_to_dict(r) for r in rows]
+
+    async def update_deferred_scan_status(
+        self, scan_id: str, status: str, fact_count: int = 0, completed_at: str | None = None
+    ) -> None:
+        async with self.acquire() as conn:
+            await conn.execute(
+                """UPDATE deferred_scans
+                   SET status = $1, result_fact_count = $2, completed_at = $3
+                   WHERE id = $4""",
+                status,
+                fact_count,
+                completed_at,
+                scan_id,
+            )
+
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
