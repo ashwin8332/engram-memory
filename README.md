@@ -16,11 +16,9 @@ Every agent sees the same verified facts. When agents contradict each other, Eng
 
 ## How It Works
 
-The moment you install Engram, it begins indexing your codebase — mapping files, understanding structure, and building a working model of what actually exists. By the time your first agent session starts, Engram already knows your project.
-
 Your brain never turns off — even when you're asleep, it's consolidating memory, surfacing patterns, preparing for what comes next. Your agents don't work that way. They lose everything the moment a session ends.
 
-Engram changes that. Every agent's messages are committed to active memory as verified facts — and Engram keeps working while you sleep, reading through your codebase, learning what changed, and surfacing contradictions before any agent acts on stale information. The longer it runs, the more it knows.
+Engram changes that. Every agent's messages are committed to active memory as verified facts — and Engram keeps working while you sleep, reading through your codebase, learning what changed, and surfacing contradictions before any agent acts on stale information. The longer it runs, the more it knows. From the moment you install it, Engram is already studying your codebase — mapping what actually exists so your agents never have to start from scratch.
 
 You can add team members and every agent on the workspace shares the same memory. Active hours are tiered by plan — see the [pricing page](https://engram-memory.com/dashboard) in your dashboard.
 
