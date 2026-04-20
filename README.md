@@ -16,7 +16,7 @@
 
 Your brain never turns off — even when you're asleep, it's consolidating memory, surfacing patterns, preparing for what comes next. Your agents don't work that way. They lose everything the moment a session ends.
 
-Engram changes that. Every agent's messages are committed to active memory as verified facts — and Engram keeps working while you sleep, reading through your codebase, learning what changed, and surfacing contradictions before any agent acts on stale information. The longer it runs, the more it knows. From the moment you install it, Engram is already studying your codebase — mapping what actually exists so your agents never have to start from scratch.
+Engram changes that. Every agent's messages are committed to active memory as verified facts — and Engram keeps working while you sleep, reading through your codebase, learning what changed, and surfacing contradictions before any agent acts on stale information. The longer it runs, the more it knows. From the moment you install it, Engram is already studying your codebase.
 
 You can add team members and every agent on the workspace shares the same memory. Active hours are tiered by plan — see the [pricing page](https://engram-memory.com/dashboard) in your dashboard.
 
